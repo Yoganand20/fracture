@@ -1,15 +1,86 @@
 mod components;
+mod dns;
 mod icons;
+mod os;
+mod proxy;
 mod route;
 mod views;
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use tokio::net::TcpListener;
+use tokio::runtime::Runtime;
+
+use crate::dns::resolver::{DnsConfig, DnsResolver, DnsType};
+use crate::os::proxy::SystemProxy;
+use crate::proxy::handler::{handle_client_connection, ProxyContext};
+
 #[cfg(target_os = "windows")]
 use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
 use dioxus::prelude::*;
 use route::Route;
+
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
+
+
+pub static IS_PROXY_ACTIVE: AtomicBool = AtomicBool::new(false);
+
 fn main() {
+    let port = 8081;
+
+    thread::spawn(move || {
+        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+
+        rt.block_on(async {
+            let dns_config = DnsConfig {
+                dns_type: DnsType::Https,
+                server_url: "cloudflare-dns.com".to_string(),
+                ip: "1.1.1.1".to_string(),
+                port: 443,
+                cache_size: 1000,
+            };
+
+            let dns = DnsResolver::new(&dns_config).expect("Failed to init DNS");
+
+            let context = Arc::new(ProxyContext {
+                dns,
+                https_only: false,
+                client_hello_mtu: 10,
+                tls_record_fragmentation: false,
+            });
+
+            let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
+                .await
+                .expect("Failed to bind proxy port");
+
+            println!(
+                "Proxy engine loaded in background on 127.0.0.1:{} (Currently OFF)",
+                port
+            );
+
+            loop {
+                match listener.accept().await {
+                    Ok((socket, _)) => {
+                        
+                        if !IS_PROXY_ACTIVE.load(Ordering::Relaxed) {
+                            continue;
+                        }
+
+                        let ctx_clone = context.clone();
+                        tokio::spawn(async move {
+                            let _ = handle_client_connection(socket, ctx_clone).await;
+                        });
+                    }
+                    Err(e) => eprintln!("Failed to accept connection: {}", e),
+                }
+            }
+        });
+    });
+
+
     let mut window = WindowBuilder::new()
         .with_decorations(false)
         .with_transparent(true)
@@ -22,7 +93,11 @@ fn main() {
     }
     let config = Config::new().with_window(window);
     LaunchBuilder::desktop().with_cfg(config).launch(App);
+
+    println!("UI Closed. Disabling system proxy...");
+    let _ = SystemProxy::disable();
 }
+
 /// App is the main component of our app. Components are the building blocks of dioxus apps. Each component is a function
 /// that takes some props and returns an Element. In this case, App takes no props because it is the root of our app.
 #[component]

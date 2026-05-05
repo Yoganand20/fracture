@@ -7,6 +7,11 @@
     'Noto Color Emoji';
     --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
     monospace;
+    --color-red-500: oklch(63.7% 0.237 25.331);
+    --color-red-600: oklch(57.7% 0.245 27.325);
+    --color-orange-400: oklch(75% 0.183 55.934);
+    --color-orange-500: oklch(70.5% 0.213 47.604);
+    --color-orange-600: oklch(64.6% 0.222 41.116);
     --color-green-500: oklch(72.3% 0.219 149.579);
     --color-green-600: oklch(62.7% 0.194 149.214);
     --color-blue-500: oklch(62.3% 0.214 259.815);
@@ -204,11 +209,14 @@
       max-width: 96rem;
     }
   }
+  .mt-2 {
+    margin-top: calc(var(--spacing) * 2);
+  }
+  .mt-4 {
+    margin-top: calc(var(--spacing) * 4);
+  }
   .flex {
     display: flex;
-  }
-  .table {
-    display: table;
   }
   .h-screen {
     height: 100vh;
@@ -225,14 +233,8 @@
   .flex-grow {
     flex-grow: 1;
   }
-  .border-collapse {
-    border-collapse: collapse;
-  }
   .transform {
     transform: var(--tw-rotate-x,) var(--tw-rotate-y,) var(--tw-rotate-z,) var(--tw-skew-x,) var(--tw-skew-y,);
-  }
-  .resize {
-    resize: both;
   }
   .flex-col {
     flex-direction: column;
@@ -284,8 +286,8 @@
   .bg-gray-500 {
     background-color: var(--color-gray-500);
   }
-  .bg-green-500 {
-    background-color: var(--color-green-500);
+  .bg-orange-400 {
+    background-color: var(--color-orange-400);
   }
   .bg-white {
     background-color: var(--color-white);
@@ -320,24 +322,20 @@
     --tw-font-weight: var(--font-weight-bold);
     font-weight: var(--font-weight-bold);
   }
+  .text-gray-400 {
+    color: var(--color-gray-400);
+  }
   .text-gray-500 {
     color: var(--color-gray-500);
   }
   .text-gray-700 {
     color: var(--color-gray-700);
   }
-  .text-green-500 {
-    color: var(--color-green-500);
+  .text-orange-400 {
+    color: var(--color-orange-400);
   }
   .text-white {
     color: var(--color-white);
-  }
-  .underline {
-    text-decoration-line: underline;
-  }
-  .outline {
-    outline-style: var(--tw-outline-style);
-    outline-width: 1px;
   }
   .transition-colors {
     transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, --tw-gradient-from, --tw-gradient-via, --tw-gradient-to;
@@ -369,16 +367,23 @@
       }
     }
   }
-  .hover\:bg-green-600 {
+  .hover\:bg-orange-500 {
     &:hover {
       @media (hover: hover) {
-        background-color: var(--color-green-600);
+        background-color: var(--color-orange-500);
       }
     }
   }
-  .focus\:border-green-500 {
+  .hover\:text-orange-500 {
+    &:hover {
+      @media (hover: hover) {
+        color: var(--color-orange-500);
+      }
+    }
+  }
+  .focus\:border-orange-400 {
     &:focus {
-      border-color: var(--color-green-500);
+      border-color: var(--color-orange-400);
     }
   }
 }
@@ -411,11 +416,6 @@
   syntax: "*";
   inherits: false;
 }
-@property --tw-outline-style {
-  syntax: "*";
-  inherits: false;
-  initial-value: solid;
-}
 @layer properties {
   @supports ((-webkit-hyphens: none) and (not (margin-trim: inline))) or ((-moz-orient: inline) and (not (color:rgb(from red r g b)))) {
     *, ::before, ::after, ::backdrop {
@@ -426,7 +426,6 @@
       --tw-skew-y: initial;
       --tw-border-style: solid;
       --tw-font-weight: initial;
-      --tw-outline-style: solid;
     }
   }
 }

@@ -11,13 +11,22 @@ pub fn AppHeader() -> Element {
             },
             div { class: "flex flex-row gap-2 items-center",
                 Icon { data: lucide::Shield }
-                div { class: "text-sm font-bold text-green-500", "GreenTunnel-rs" }
+                div { class: "text-sm font-bold text-orange-400", "Fracture" }
             }
             div { class: "flex flex-row gap-2",
                 button {
+                    onmousedown: move |e| e.stop_propagation(),
+                    onclick: move |_| {
+
+                        window().set_minimized(true);
+                    },
                     Icon { data: lucide::Minus }
                 }
                 button {
+                    onmousedown: move |e| e.stop_propagation(),
+                    onclick: move |_| {
+                        window().close();
+                    },
                     Icon { data: lucide::X }
                 }
             }

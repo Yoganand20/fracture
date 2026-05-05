@@ -10,7 +10,7 @@ pub fn Settings() -> Element {
             div { class: "flex flex-col gap-2",
                 label { class: "text-sm font-bold text-gray-700", "Custom DNS Server" }
                 input {
-                    class: "border rounded px-3 py-2 text-sm w-full outline-none focus:border-green-500",
+                    class: "border rounded px-3 py-2 text-sm w-full outline-none focus:border-orange-400",
                     placeholder: "e.g., 1.1.1.1",
                     r#type: "text",
                 }
@@ -18,7 +18,7 @@ pub fn Settings() -> Element {
             div { class: "flex flex-col gap-2",
                 label { class: "text-sm font-bold text-gray-700", "Local Port" }
                 input {
-                    class: "border rounded px-3 py-2 text-sm w-full outline-none focus:border-green-500",
+                    class: "border rounded px-3 py-2 text-sm w-full outline-none focus:border-orange-400",
                     placeholder: "e.g., 8080",
                     r#type: "number",
                 }
