@@ -182,4 +182,58 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_https_client_drops_before_client_hello() {
+        let config = create_test_config(10, false);
+        let dns = create_test_dns();
+
+        // 1. Setup a mock upstream server (it will accept the connection but receive no data)
+        let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_port = upstream.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let _ = upstream.accept().await.unwrap();
+        });
+
+        // 2. Setup the proxy listener
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_port = proxy_listener.local_addr().unwrap().port();
+
+        // 3. Connect client
+        let mut client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
+        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
+
+        // 4. Send a valid CONNECT request
+        let initial_data = format!(
+            "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            upstream_port
+        )
+        .into_bytes();
+
+        // 5. Spawn the handler in a task so we can monitor its exit status
+        let proxy_task = tokio::spawn(async move {
+            let result = handle_https(proxy_socket, initial_data, config, dns).await;
+
+            // It should exit gracefully with Ok(()) or an expected IO Error, not a panic.
+            assert!(
+                result.is_ok()
+                    || result.unwrap_err().kind() == std::io::ErrorKind::ConnectionAborted
+            );
+        });
+
+        // 6. Wait for proxy to send "200 Connection Established"
+        let mut buf = vec![0; 1024];
+        let n = client_mock.read(&mut buf).await.unwrap();
+        assert!(String::from_utf8_lossy(&buf[..n]).contains("200 Connection Established"));
+
+        // 7. CRITICAL ACTION: Client maliciously drops the TCP connection without sending ClientHello!
+        drop(client_mock);
+
+        // 8. Ensure the proxy handler finishes successfully and doesn't hang forever or crash
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(1), proxy_task)
+            .await
+            .expect("Proxy task hung waiting for ClientHello instead of exiting!");
+    }
 }

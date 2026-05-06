@@ -90,8 +90,7 @@ fn main() {
 
                         // Spawn a lightweight Tokio task for the new connection
                         tokio::spawn(async move {
-                            let result =
-                                handle_connection(socket, config_clone, dns_clone).await;
+                            let result = handle_connection(socket, config_clone, dns_clone).await;
                             if let Err(e) = result {
                                 eprintln!("Connection handler error: {}", e);
                             }

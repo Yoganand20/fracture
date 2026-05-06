@@ -208,4 +208,53 @@ mod tests {
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("No Host header found"));
     }
+
+    #[tokio::test]
+    async fn test_http_missing_port_fallback() {
+        let config = create_test_config();
+        let dns = create_test_dns();
+
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_port = proxy_listener.local_addr().unwrap().port();
+        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
+        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
+
+        // No port specified in Host header. Should default to port 80.
+        let raw_http_request = b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".to_vec();
+
+        let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
+
+        // We expect it to try connecting to 127.0.0.1:80 and fail cleanly
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.kind(),
+            std::io::ErrorKind::ConnectionRefused,
+            "Did not attempt to connect to the default port 80"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_http_incomplete_headers() {
+        let config = create_test_config();
+        let dns = create_test_dns();
+
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_port = proxy_listener.local_addr().unwrap().port();
+        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
+        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
+
+        // Incomplete HTTP request (Missing the double \r\n at the end, and half a host header)
+        let raw_http_request = b"GET / HTTP/1.1\r\nHo".to_vec();
+
+        let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
+
+        // httparse will return Status::Partial, so headers will be empty, leading to a dropped connection.
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+    }
 }
