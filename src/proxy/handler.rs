@@ -10,7 +10,7 @@ use crate::proxy::https::handle_https;
 pub struct ProxyContext {
     pub dns: DnsResolver,
     pub https_only: bool,
-    pub client_hello_mtu: usize,
+    pub fragmentation_size: usize,
     pub tls_record_fragmentation: bool,
 }
 
@@ -68,7 +68,7 @@ mod tests {
         Arc::new(ProxyContext {
             dns,
             https_only,
-            client_hello_mtu: mtu,
+            fragmentation_size: mtu,
             tls_record_fragmentation: false,
         })
     }

@@ -6,8 +6,8 @@ mod proxy;
 mod route;
 mod views;
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
@@ -25,8 +25,24 @@ use route::Route;
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
-
 pub static IS_PROXY_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Debug)]
+pub struct AppConfig {
+    pub tls_record_fragmentation: bool,
+    pub fragmentation_size: usize,
+    pub https_only: bool,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            tls_record_fragmentation: false, // Default to blind chunking
+            fragmentation_size: 100,
+            https_only: false,
+        }
+    }
+}
 
 fn main() {
     let port = 8081;
@@ -48,7 +64,7 @@ fn main() {
             let context = Arc::new(ProxyContext {
                 dns,
                 https_only: false,
-                client_hello_mtu: 10,
+                fragmentation_size: 10,
                 tls_record_fragmentation: false,
             });
 
@@ -64,7 +80,6 @@ fn main() {
             loop {
                 match listener.accept().await {
                     Ok((socket, _)) => {
-                        
                         if !IS_PROXY_ACTIVE.load(Ordering::Relaxed) {
                             continue;
                         }
@@ -79,7 +94,6 @@ fn main() {
             }
         });
     });
-
 
     let mut window = WindowBuilder::new()
         .with_decorations(false)
@@ -102,6 +116,7 @@ fn main() {
 /// that takes some props and returns an Element. In this case, App takes no props because it is the root of our app.
 #[component]
 fn App() -> Element {
+    use_context_provider(|| Signal::new(AppConfig::default()));
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: TAILWIND_CSS }

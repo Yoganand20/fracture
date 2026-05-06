@@ -3,8 +3,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::handler::ProxyContext;
-use crate::proxy::buffer::buffer_to_chunks;
-use crate::proxy::tls_record_fragmentation; // From Phase 1
+use crate::proxy::buffer::blind_chunk_buffer;
+use crate::proxy::fragment_tls_record; // From Phase 1
 
 /// Equivalent to `handleHTTPS` in `https.js`
 pub async fn handle_https(
@@ -45,9 +45,9 @@ pub async fn handle_https(
 
     // 6. THE GREEN TUNNEL MAGIC: Fragment the ClientHello (Phase 1)
     let chunks = if context.tls_record_fragmentation {
-        tls_record_fragmentation(&client_hello_buf, context.client_hello_mtu)
+        fragment_tls_record(&client_hello_buf, context.fragmentation_size)
     } else {
-        buffer_to_chunks(&client_hello_buf, context.client_hello_mtu)
+        blind_chunk_buffer(&client_hello_buf, context.fragmentation_size)
     };
 
     // Send the tiny fragments to the server one by one to bypass DPI
@@ -81,7 +81,7 @@ mod tests {
         Arc::new(ProxyContext {
             dns,
             https_only: false,
-            client_hello_mtu: mtu,
+            fragmentation_size: mtu,
             tls_record_fragmentation: strict_fragmentation,
         })
     }

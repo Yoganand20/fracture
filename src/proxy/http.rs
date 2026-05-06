@@ -3,7 +3,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::handler::ProxyContext;
-use crate::proxy::buffer::buffer_to_chunks;
+use crate::proxy::buffer::blind_chunk_buffer;
 
 /// Handles standard, unencrypted HTTP traffic.
 pub async fn handle_http(
@@ -55,7 +55,7 @@ pub async fn handle_http(
     // 4. THE GREEN TUNNEL MAGIC: Fragment the HTTP Request
     // DPI systems actively look for the "Host: blocked-website.com" string in plaintext HTTP.
     // By chopping the request into tiny chunks, the DPI cannot match the string!
-    let chunks = buffer_to_chunks(&initial_data, context.client_hello_mtu);
+    let chunks = blind_chunk_buffer(&initial_data, context.fragmentation_size);
 
     for chunk in chunks {
         server_stream.write_all(&chunk).await?;
@@ -86,7 +86,7 @@ mod tests {
         Arc::new(ProxyContext {
             dns,
             https_only: false,
-            client_hello_mtu: 5,
+            fragmentation_size: 5,
             tls_record_fragmentation: false,
         })
     }
