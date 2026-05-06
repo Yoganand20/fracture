@@ -4,9 +4,11 @@ use dioxus::prelude::*;
 #[component]
 pub fn Layout() -> Element {
     rsx! {
-        div { id: "layout", class: "flex flex-col h-screen w-screen",
+        div {
+            id: "layout",
+            class: "flex flex-col h-screen w-screen overflow-hidden",
             AppHeader {}
-            div { class: "p-4 flex flex-col flex-1", Outlet::<Route> {} }
+            div { class: "p-4 flex flex-col flex-1 min-h-0", Outlet::<Route> {} }
         }
     }
 }

@@ -32,6 +32,7 @@ pub struct AppConfig {
     pub tls_record_fragmentation: bool,
     pub fragmentation_size: usize,
     pub https_only: bool,
+    pub dns: DnsConfig,
 }
 
 impl Default for AppConfig {
@@ -40,6 +41,13 @@ impl Default for AppConfig {
             tls_record_fragmentation: false, // Default to blind chunking
             fragmentation_size: 100,
             https_only: false,
+            dns: DnsConfig {
+                dns_type: DnsType::Https,
+                server_url: "cloudflare-dns.com".to_string(),
+                ips: vec!["1.1.1.1".to_string(), "1.0.0.1".to_string()],
+                port: 443,
+                cache_size: 1000,
+            },
         }
     }
 }

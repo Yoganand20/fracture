@@ -56,6 +56,13 @@ mod tests {
             tls_record_fragmentation: false,
             fragmentation_size: mtu,
             https_only,
+            dns: DnsConfig {
+                dns_type: DnsType::Unencrypted,
+                server_url: "".to_string(),
+                ips: vec!["8.8.8.8".to_string()],
+                port: 53,
+                cache_size: 100,
+            },
         })
     }
 
@@ -196,6 +203,7 @@ mod tests {
             "Bidirectional pipe failed"
         );
     }
+
     #[tokio::test]
     async fn test_router_forwards_plain_http() {
         let config = create_test_config(false, 100); // https_only = false

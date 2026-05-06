@@ -95,6 +95,13 @@ mod tests {
             tls_record_fragmentation: strict_fragmentation,
             fragmentation_size: mtu,
             https_only: false,
+            dns: DnsConfig {
+                dns_type: DnsType::Unencrypted,
+                server_url: "".to_string(),
+                ips: vec!["8.8.8.8".to_string()],
+                port: 53,
+                cache_size: 100,
+            },
         })
     }
 
@@ -162,7 +169,7 @@ mod tests {
             String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200 Connection Established")
         );
 
-        // FIX: Construct a valid fake TLS Handshake record (22 = Handshake, 3,3 = TLS 1.2, 0,10 = Length)
+        // Construct a valid fake TLS Handshake record (22 = Handshake, 3,3 = TLS 1.2, 0,10 = Length)
         let mut fake_tls_record = vec![22, 3, 3, 0, 10];
         fake_tls_record.extend_from_slice(b"1234567890"); // Exactly 10 bytes payload
 

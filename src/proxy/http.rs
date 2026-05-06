@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use crate::dns::DnsResolver;
+use crate::dns::resolver::DnsResolver;
 use crate::proxy::buffer::blind_chunk_buffer;
 use crate::AppConfig;
 
@@ -64,6 +64,7 @@ pub async fn handle_http(
 
     Ok(())
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -77,6 +78,13 @@ mod tests {
             tls_record_fragmentation: false,
             fragmentation_size: 5, // Tiny MTU to ensure chunking happens
             https_only: false,     // Must be false for HTTP to work
+            dns: DnsConfig {
+                dns_type: DnsType::Unencrypted,
+                server_url: "".to_string(),
+                ips: vec!["8.8.8.8".to_string()],
+                port: 53,
+                cache_size: 100,
+            },
         })
     }
 

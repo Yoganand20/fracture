@@ -11,6 +11,7 @@ pub enum DnsType {
     Unencrypted, // Port 53 UDP/TCP
 }
 
+#[derive(Clone, Debug)]
 pub struct DnsConfig {
     pub dns_type: DnsType,
     pub server_url: String, // e.g., "cloudflare-dns.com"
