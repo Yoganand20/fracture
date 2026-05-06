@@ -13,14 +13,6 @@ pub async fn handle_http(
     config: Arc<AppConfig>,
     dns: Arc<DnsResolver>,
 ) -> std::io::Result<()> {
-    // 0. Enforce HTTPS-Only Policy
-    if config.https_only {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::ConnectionRefused,
-            "HTTPS-only mode enabled. Dropping unencrypted HTTP traffic.",
-        ));
-    }
-
     // 1. Parse the HTTP headers to find the destination Host
     let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut req = httparse::Request::new(&mut headers);
@@ -93,7 +85,7 @@ mod tests {
         let dns_config = DnsConfig {
             dns_type: DnsType::Unencrypted,
             server_url: "".to_string(),
-            ip: "8.8.8.8".to_string(),
+            ips: vec!["8.8.8.8".to_string()],
             port: 53,
             cache_size: 100,
         };
@@ -151,36 +143,6 @@ mod tests {
         let mut buf = vec![0; 1024];
         let n = client_mock.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"HTTP/1.1 200 OK\r\n\r\nBODY");
-    }
-
-    #[tokio::test]
-    async fn test_http_dropped_when_https_only_enabled() {
-        // 1. Create a config with https_only = TRUE
-        let config = Arc::new(AppConfig {
-            tls_record_fragmentation: false,
-            fragmentation_size: 5,
-            https_only: true, // This is the trigger!
-        });
-        let dns = create_test_dns();
-
-        // 2. Setup dummy socket
-        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let proxy_port = proxy_listener.local_addr().unwrap().port();
-        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
-            .await
-            .unwrap();
-        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
-
-        // 3. Create a perfectly valid HTTP request
-        let raw_http_request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n".to_vec();
-
-        // 4. Run `handle_http` and expect a ConnectionRefused error
-        let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(err.kind(), std::io::ErrorKind::ConnectionRefused);
-        assert!(err.to_string().contains("HTTPS-only mode enabled"));
     }
 
     #[tokio::test]

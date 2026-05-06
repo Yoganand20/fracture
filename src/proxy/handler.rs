@@ -64,7 +64,7 @@ mod tests {
         let dns_config = DnsConfig {
             dns_type: DnsType::Unencrypted,
             server_url: "".to_string(),
-            ip: "8.8.8.8".to_string(),
+            ips: vec!["8.8.8.8".to_string()],
             port: 53,
             cache_size: 100,
         };
@@ -123,13 +123,16 @@ mod tests {
 
         tokio::spawn(async move {
             let (mut socket, _) = upstream_server.accept().await.unwrap();
-            let mut buf = vec![0; 1024];
 
-            // Wait for the ClientHello fragments to arrive and be reassembled by the OS
-            let n = socket.read(&mut buf).await.unwrap();
+            // Wait for the fragmented TLS ClientHello to arrive.
+            // 5 byte header + 10 byte payload = 15 bytes expected.
+            let mut buf = vec![0; 15];
+            socket.read_exact(&mut buf).await.unwrap();
 
             // Verify the payload arrived perfectly intact despite fragmentation!
-            assert_eq!(&buf[..n], b"HELLO_TLS_WORLD_12345");
+            let mut expected_tls = vec![22, 3, 3, 0, 10];
+            expected_tls.extend_from_slice(b"1234567890");
+            assert_eq!(buf, expected_tls);
 
             // Reply back to the client
             socket
@@ -179,8 +182,11 @@ mod tests {
             response_str
         );
 
-        // Step C: Send the fake TLS ClientHello
-        browser.write_all(b"HELLO_TLS_WORLD_12345").await.unwrap();
+        // Step C: Send a STRUCTURALLY VALID fake TLS ClientHello
+        // 22 = Handshake, 3, 3 = TLS 1.2, 0, 10 = Length 10
+        let mut fake_tls_record = vec![22, 3, 3, 0, 10];
+        fake_tls_record.extend_from_slice(b"1234567890"); // Exactly 10 bytes payload
+        browser.write_all(&fake_tls_record).await.unwrap();
 
         // Step D: Ensure the bidirectional pipe works by receiving the server's response
         let n = browser.read(&mut buf).await.unwrap();
@@ -190,7 +196,6 @@ mod tests {
             "Bidirectional pipe failed"
         );
     }
-
     #[tokio::test]
     async fn test_router_forwards_plain_http() {
         let config = create_test_config(false, 100); // https_only = false

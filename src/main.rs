@@ -56,7 +56,7 @@ fn main() {
             let dns_config = DnsConfig {
                 dns_type: DnsType::Https,
                 server_url: "cloudflare-dns.com".to_string(),
-                ip: "1.1.1.1".to_string(),
+                ips: vec!["1.1.1.1".to_string()],
                 port: 443,
                 cache_size: 1000,
             };
