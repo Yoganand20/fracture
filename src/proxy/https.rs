@@ -3,7 +3,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 use super::handler::ProxyContext;
-use crate::proxy::buffer::buffer_to_chunks; // From Phase 1
+use crate::proxy::buffer::buffer_to_chunks;
+use crate::proxy::tls_record_fragmentation; // From Phase 1
 
 /// Equivalent to `handleHTTPS` in `https.js`
 pub async fn handle_https(
@@ -15,10 +16,10 @@ pub async fn handle_https(
     let request_str = String::from_utf8_lossy(&initial_data);
     let first_line = request_str.lines().next().unwrap_or("");
     let mut parts = first_line.split_whitespace();
-    
+
     parts.next(); // Skip "CONNECT"
     let target = parts.next().unwrap_or(""); // "example.com:443"
-    
+
     let (host, port_str) = target.split_once(':').unwrap_or((target, "443"));
     let port: u16 = port_str.parse().unwrap_or(443);
 
@@ -43,11 +44,11 @@ pub async fn handle_https(
     client_hello_buf.truncate(n);
 
     // 6. THE GREEN TUNNEL MAGIC: Fragment the ClientHello (Phase 1)
-    let chunks = buffer_to_chunks(
-        client_hello_buf,
-        context.client_hello_mtu,
-        context.tls_record_fragmentation,
-    );
+    let chunks = if context.tls_record_fragmentation {
+        tls_record_fragmentation(&client_hello_buf, context.client_hello_mtu)
+    } else {
+        buffer_to_chunks(&client_hello_buf, context.client_hello_mtu)
+    };
 
     // Send the tiny fragments to the server one by one to bypass DPI
     for chunk in chunks {
@@ -76,7 +77,7 @@ mod tests {
             cache_size: 100,
         };
         let dns = DnsResolver::new(&config).unwrap();
-        
+
         Arc::new(ProxyContext {
             dns,
             https_only: false,
@@ -97,7 +98,7 @@ mod tests {
         tokio::spawn(async move {
             let (mut socket, _) = upstream.accept().await.unwrap();
             let mut buf = vec![0; 1024];
-            
+
             // Read the initial ClientHello that the proxy forwards
             let n = socket.read(&mut buf).await.unwrap();
             assert_eq!(&buf[..n], b"MOCK_CLIENT_HELLO_DATA");
@@ -111,13 +112,19 @@ mod tests {
         let proxy_port = proxy_listener.local_addr().unwrap().port();
 
         // 3. Connect our mock client (browser) to the proxy listener
-        let mut client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port)).await.unwrap();
-        
+        let mut client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
+
         // Accept the incoming connection so we have a real TcpStream to pass to the handler
         let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
 
         // 4. Formulate the CONNECT header (pointing to our mock upstream server)
-        let initial_data = format!("CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n", upstream_port).into_bytes();
+        let initial_data = format!(
+            "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
+            upstream_port
+        )
+        .into_bytes();
 
         // 5. Run `handle_https` in the background with our real TcpStream
         tokio::spawn(async move {
@@ -127,13 +134,18 @@ mod tests {
 
         // 6. Client behavior validation
         let mut buf = vec![0; 1024];
-        
+
         // Wait for Proxy to reply with "200 Connection Established"
         let n = client_mock.read(&mut buf).await.unwrap();
-        assert!(String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200 Connection Established"));
+        assert!(
+            String::from_utf8_lossy(&buf[..n]).starts_with("HTTP/1.1 200 Connection Established")
+        );
 
         // Send the mock ClientHello (which the proxy will fragment and forward to upstream)
-        client_mock.write_all(b"MOCK_CLIENT_HELLO_DATA").await.unwrap();
+        client_mock
+            .write_all(b"MOCK_CLIENT_HELLO_DATA")
+            .await
+            .unwrap();
 
         // Read the response that the upstream server sent back through the bidirectional pipe
         let n = client_mock.read(&mut buf).await.unwrap();
@@ -143,11 +155,13 @@ mod tests {
     #[tokio::test]
     async fn test_https_malformed_connect_string() {
         let context = create_local_context(100, false);
-        
+
         // Create a real TCP pair for testing the failure case
         let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_port = proxy_listener.local_addr().unwrap().port();
-        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port)).await.unwrap();
+        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
         let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
 
         // Pass a completely garbage string instead of a valid CONNECT target
@@ -156,7 +170,7 @@ mod tests {
         // Because "INVALID_TARGET_NO_PORT" cannot be resolved by DNS or connected to,
         // handle_https should gracefully fail and return an IO error, NOT panic.
         let result = handle_https(proxy_socket, initial_data, context).await;
-        
+
         assert!(result.is_err());
     }
 }

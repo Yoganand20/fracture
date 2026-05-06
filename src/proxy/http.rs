@@ -55,11 +55,7 @@ pub async fn handle_http(
     // 4. THE GREEN TUNNEL MAGIC: Fragment the HTTP Request
     // DPI systems actively look for the "Host: blocked-website.com" string in plaintext HTTP.
     // By chopping the request into tiny chunks, the DPI cannot match the string!
-    let chunks = buffer_to_chunks(
-        initial_data,
-        context.client_hello_mtu,
-        false, // HTTP doesn't use TLS, so we just blindly segment the TCP stream
-    );
+    let chunks = buffer_to_chunks(&initial_data, context.client_hello_mtu);
 
     for chunk in chunks {
         server_stream.write_all(&chunk).await?;

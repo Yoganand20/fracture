@@ -1,17 +1,6 @@
 /// The main entry point for splitting network packets to bypass DPI.
-/// If record_fragmentation is true, it strictly reconstructs valid TLS records.
-/// Otherwise, it acts as a blind TCP segmentation tool.
-pub fn buffer_to_chunks(
-    buffer: Vec<u8>,
-    chunk_size: usize,
-    record_fragmentation: bool,
-) -> Vec<Vec<u8>> {
-    // If strict TLS fragmentation is enabled, return the individual TLS records directly.
-    // We do NOT want to blindly chunk them again after building them!
-    if record_fragmentation {
-        return tls_record_fragmentation(&buffer, chunk_size);
-    }
-
+/// A blind TCP segmentation tool.
+pub fn buffer_to_chunks(buffer: &Vec<u8>, chunk_size: usize) -> Vec<Vec<u8>> {
     let mut result = Vec::new();
     let mut i = 0;
 
@@ -27,7 +16,7 @@ pub fn buffer_to_chunks(
 
 /// Parses the initial ClientHello packet and breaks it down into
 /// multiple, structurally valid TLS records that share the same handshake.
-fn tls_record_fragmentation(buffer: &[u8], chunk_size: usize) -> Vec<Vec<u8>> {
+pub fn tls_record_fragmentation(buffer: &Vec<u8>, chunk_size: usize) -> Vec<Vec<u8>> {
     // If the buffer is completely empty, return an empty list of chunks
     if buffer.is_empty() {
         return Vec::new();
@@ -71,7 +60,7 @@ mod tests {
     #[test]
     fn test_blind_chunking_standard() {
         let buffer = vec![1, 2, 3, 4, 5, 6, 7];
-        let chunks = buffer_to_chunks(buffer, 3, false);
+        let chunks = buffer_to_chunks(&buffer, 3);
         // Should split into [1,2,3], [4,5,6], and the remainder [7]
         assert_eq!(chunks, vec![vec![1, 2, 3], vec![4, 5, 6], vec![7]]);
     }
@@ -79,7 +68,7 @@ mod tests {
     #[test]
     fn test_blind_chunking_exact_multiple() {
         let buffer = vec![1, 2, 3, 4, 5, 6];
-        let chunks = buffer_to_chunks(buffer, 3, false);
+        let chunks = buffer_to_chunks(&buffer, 3);
         // Should perfectly split into two chunks with no remainder
         assert_eq!(chunks, vec![vec![1, 2, 3], vec![4, 5, 6]]);
     }
@@ -87,7 +76,7 @@ mod tests {
     #[test]
     fn test_empty_buffer() {
         let buffer: Vec<u8> = vec![];
-        let chunks = buffer_to_chunks(buffer, 3, true);
+        let chunks = tls_record_fragmentation(&buffer, 3);
         // Should safely return nothing without panicking
         assert_eq!(chunks.len(), 0);
     }
@@ -96,7 +85,7 @@ mod tests {
     fn test_tls_record_too_small() {
         // A packet smaller than the 5-byte TLS header
         let buffer = vec![22, 3, 3];
-        let chunks = buffer_to_chunks(buffer.clone(), 10, true);
+        let chunks = tls_record_fragmentation(&buffer, 10);
         // It cannot parse a TLS header, so it should just return the original chunk intact
         assert_eq!(chunks, vec![buffer]);
     }
@@ -110,7 +99,7 @@ mod tests {
         buffer.extend_from_slice(&[10, 20, 30, 40]); // The 4 bytes of mock payload
 
         // We want to fragment this into chunk sizes of 2 bytes for the payload
-        let chunks = buffer_to_chunks(buffer, 2, true);
+        let chunks = tls_record_fragmentation(&buffer, 2);
 
         // We expect it to construct TWO completely valid TLS records!
         // Record 1: Header + Length of 2 + [10, 20]
