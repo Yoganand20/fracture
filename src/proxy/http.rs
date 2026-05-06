@@ -2,21 +2,29 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
-use super::handler::ProxyContext;
+use crate::dns::DnsResolver;
 use crate::proxy::buffer::blind_chunk_buffer;
+use crate::AppConfig;
 
 /// Handles standard, unencrypted HTTP traffic.
 pub async fn handle_http(
     mut client_stream: TcpStream,
     initial_data: Vec<u8>,
-    context: Arc<ProxyContext>,
+    config: Arc<AppConfig>,
+    dns: Arc<DnsResolver>,
 ) -> std::io::Result<()> {
+    // 0. Enforce HTTPS-Only Policy
+    if config.https_only {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "HTTPS-only mode enabled. Dropping unencrypted HTTP traffic.",
+        ));
+    }
+
     // 1. Parse the HTTP headers to find the destination Host
     let mut headers = [httparse::EMPTY_HEADER; 64];
     let mut req = httparse::Request::new(&mut headers);
 
-    // We ignore the parse result here because even if it's incomplete,
-    // we just need to scan the headers that DID arrive for the "Host" field.
     let _ = req.parse(&initial_data);
 
     let mut host = String::new();
@@ -42,8 +50,8 @@ pub async fn handle_http(
         ));
     }
 
-    // 2. Resolve the IP using our Encrypted DNS (Bypassing ISP blocklists)
-    let ip = context.dns.lookup(&host).await?;
+    // 2. Resolve the IP using our injected Encrypted DNS
+    let ip = dns.lookup(&host).await?;
 
     // 3. Connect to the destination HTTP server
     let mut server_stream = TcpStream::connect((ip, port)).await?;
@@ -52,10 +60,8 @@ pub async fn handle_http(
     server_stream.set_nodelay(true)?;
     client_stream.set_nodelay(true)?;
 
-    // 4. THE GREEN TUNNEL MAGIC: Fragment the HTTP Request
-    // DPI systems actively look for the "Host: blocked-website.com" string in plaintext HTTP.
-    // By chopping the request into tiny chunks, the DPI cannot match the string!
-    let chunks = blind_chunk_buffer(&initial_data, context.fragmentation_size);
+    // 4. Fragment the HTTP Request using the config's MTU
+    let chunks = blind_chunk_buffer(&initial_data, config.fragmentation_size);
 
     for chunk in chunks {
         server_stream.write_all(&chunk).await?;
@@ -66,34 +72,38 @@ pub async fn handle_http(
 
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::dns::resolver::{DnsConfig, DnsResolver, DnsType};
+    use crate::AppConfig;
     use tokio::net::TcpListener;
 
-    fn create_local_context() -> Arc<ProxyContext> {
-        let config = DnsConfig {
+    // Helper to generate a dummy AppConfig for testing
+    fn create_test_config() -> Arc<AppConfig> {
+        Arc::new(AppConfig {
+            tls_record_fragmentation: false,
+            fragmentation_size: 5, // Tiny MTU to ensure chunking happens
+            https_only: false,     // Must be false for HTTP to work
+        })
+    }
+
+    // Helper to generate a dummy DNS resolver
+    fn create_test_dns() -> Arc<DnsResolver> {
+        let dns_config = DnsConfig {
             dns_type: DnsType::Unencrypted,
             server_url: "".to_string(),
             ip: "8.8.8.8".to_string(),
             port: 53,
             cache_size: 100,
         };
-        let dns = DnsResolver::new(&config).unwrap();
-
-        Arc::new(ProxyContext {
-            dns,
-            https_only: false,
-            fragmentation_size: 5,
-            tls_record_fragmentation: false,
-        })
+        Arc::new(DnsResolver::new(&dns_config).unwrap())
     }
 
     #[tokio::test]
     async fn test_http_parsing_and_fragmentation() {
-        let context = create_local_context();
+        let config = create_test_config();
+        let dns = create_test_dns();
 
         // 1. Setup mock upstream HTTP server
         let upstream = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -131,9 +141,9 @@ mod tests {
         )
         .into_bytes();
 
-        // 4. Run `handle_http`
+        // 4. Run `handle_http` with purely injected parameters
         tokio::spawn(async move {
-            let result = handle_http(proxy_socket, raw_http_request, context).await;
+            let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
             assert!(result.is_ok());
         });
 
@@ -141,5 +151,61 @@ mod tests {
         let mut buf = vec![0; 1024];
         let n = client_mock.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"HTTP/1.1 200 OK\r\n\r\nBODY");
+    }
+
+    #[tokio::test]
+    async fn test_http_dropped_when_https_only_enabled() {
+        // 1. Create a config with https_only = TRUE
+        let config = Arc::new(AppConfig {
+            tls_record_fragmentation: false,
+            fragmentation_size: 5,
+            https_only: true, // This is the trigger!
+        });
+        let dns = create_test_dns();
+
+        // 2. Setup dummy socket
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_port = proxy_listener.local_addr().unwrap().port();
+        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
+        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
+
+        // 3. Create a perfectly valid HTTP request
+        let raw_http_request = b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n".to_vec();
+
+        // 4. Run `handle_http` and expect a ConnectionRefused error
+        let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::ConnectionRefused);
+        assert!(err.to_string().contains("HTTPS-only mode enabled"));
+    }
+
+    #[tokio::test]
+    async fn test_http_missing_host_header() {
+        // 1. Standard config
+        let config = create_test_config();
+        let dns = create_test_dns();
+
+        // 2. Setup dummy socket
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_port = proxy_listener.local_addr().unwrap().port();
+        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
+            .await
+            .unwrap();
+        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
+
+        // 3. Create a malformed HTTP request (MISSING the Host header)
+        let raw_http_request = b"GET / HTTP/1.1\r\nUser-Agent: curl\r\n\r\n".to_vec();
+
+        // 4. Run `handle_http` and expect an InvalidData error
+        let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("No Host header found"));
     }
 }
