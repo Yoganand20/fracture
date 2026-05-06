@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 use crate::dns::resolver::DnsResolver;
@@ -70,6 +70,7 @@ mod tests {
     use super::*;
     use crate::dns::resolver::{DnsConfig, DnsResolver, DnsType};
     use crate::AppConfig;
+    use tokio::io::AsyncReadExt;
     use tokio::net::TcpListener;
 
     // Helper to generate a dummy AppConfig for testing
