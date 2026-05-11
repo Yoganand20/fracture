@@ -1,11 +1,14 @@
 use crate::{dns::resolver::DnsType, route::Route, AppConfig};
 use dioxus::prelude::*;
+use std::sync::Arc;
 
 #[component]
 pub fn Settings() -> Element {
     let navigator = use_navigator();
     let mut global_config = use_context::<Signal<AppConfig>>();
     let mut local_config = use_signal(|| global_config.read().clone());
+
+    let tx = use_context::<tokio::sync::watch::Sender<Arc<AppConfig>>>();
 
     let current_dns_type = match local_config.read().dns.dns_type {
         DnsType::Https => "Https",
@@ -15,8 +18,6 @@ pub fn Settings() -> Element {
     };
 
     rsx! {
-        // FIX: Replaced `absolute inset-0` with `h-full w-full`.
-        // It now perfectly fills the min-h-0 container below the AppHeader!
         div { class: "flex flex-col h-full w-full bg-gray-50 overflow-hidden",
 
             // 1. CONTENT DIV: Scrolls internally
@@ -176,8 +177,16 @@ pub fn Settings() -> Element {
                     class: "px-4 py-2 w-full bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition",
                     onclick: move |_| {
                         let draft_settings = local_config.read().clone();
-                        *global_config.write() = draft_settings;
-                        println!("Saved new settings globally.");
+
+                        // 1. Update the local Dioxus UI Signal
+                        *global_config.write() = draft_settings.clone();
+
+                        // 2. Broadcast the new config to the background Tokio engine
+                        if let Err(e) = tx.send(Arc::new(draft_settings)) {
+                            eprintln!("Failed to send config to proxy engine: {}", e);
+                        } else {
+                            println!("Saved settings and instantly synced with Proxy Engine.");
+                        }
                     },
                     "Save Configuration"
                 }

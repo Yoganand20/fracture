@@ -10,7 +10,6 @@ edition = "2021"
 dioxus = { version = "0.7.1", features = ["router"] }
 tokio = { version = "1.52.2", features = ["full"] }
 hickory-resolver = { version = "0.24", features = ["dns-over-rustls", "dns-over-https-rustls", "webpki-roots", "dns-over-quic"] }
-moka = { version = "0.12.15", features = ["future"] }
 httparse = "1.10.1"
 winreg = "0.56.0"
 
@@ -22,3 +21,11 @@ web = ["dioxus/web"]
 desktop = ["dioxus/desktop"]
 # The feature that are only required for the mobile = ["dioxus/mobile"] build target should be optional and only enabled in the mobile = ["dioxus/mobile"] feature
 mobile = ["dioxus/mobile"]
+
+[profile.release]
+opt-level = "z"
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+incremental = false

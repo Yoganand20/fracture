@@ -56,7 +56,7 @@ pub fn Home() -> Element {
                 }
             }
 
-            StatusCard {}
+            StatusCard { is_active: is_active() }
 
             // Start/Stop Button
             button {

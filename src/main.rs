@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::thread;
 use tokio::net::TcpListener;
 use tokio::runtime::Runtime;
+use tokio::sync::watch;
 
 use crate::dns::resolver::{DnsConfig, DnsResolver, DnsType};
 use crate::os::proxy::SystemProxy;
@@ -38,7 +39,7 @@ pub struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            tls_record_fragmentation: false, // Default to blind chunking
+            tls_record_fragmentation: false,
             fragmentation_size: 100,
             https_only: false,
             dns: DnsConfig {
@@ -55,25 +56,23 @@ impl Default for AppConfig {
 fn main() {
     let port = 8081;
 
+    // Create the Watch Channel wrapped in an Arc for cheap cloning
+    let initial_config = Arc::new(AppConfig::default());
+    let (tx, mut rx) = watch::channel(initial_config);
+
     // Spawn the background Proxy Engine
     thread::spawn(move || {
-        let rt = Runtime::new().expect("Failed to create Tokio runtime");
+        let rt: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
 
         rt.block_on(async {
-            // 1. Initialize DNS
-            let dns_config = DnsConfig {
-                dns_type: DnsType::Https,
-                server_url: "cloudflare-dns.com".to_string(),
-                ips: vec!["1.1.1.1".to_string()],
-                port: 443,
-                cache_size: 1000,
-            };
-            let dns = Arc::new(DnsResolver::new(&dns_config).expect("Failed to init DNS"));
+            // Read initial state from the channel
+            let mut current_config = rx.borrow().clone();
 
-            // 2. Initialize Proxy Settings (Currently hardcoded, needs to be synced with Dioxus UI later!)
-            let app_config = Arc::new(AppConfig::default());
+            // Initialize DNS Resolver
+            let mut current_dns =
+                Arc::new(DnsResolver::new(&current_config.dns).expect("Failed to init DNS"));
 
-            // 3. Bind the local TCP port
+            // Bind the TCP port
             let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
                 .await
                 .expect("Failed to bind proxy port");
@@ -83,8 +82,21 @@ fn main() {
                 port
             );
 
-            // 4. Listen for incoming browser connections
+            // Listen for connections
             loop {
+                // A. VERY FAST NON-BLOCKING CHECK: Has the Dioxus UI sent a new config?
+                if rx.has_changed().unwrap_or(false) {
+                    current_config = rx.borrow_and_update().clone();
+                    println!("Proxy Engine detected a settings update! Applying...");
+
+                    // Re-initialize the DNS resolver if the settings changed
+                    match DnsResolver::new(&current_config.dns) {
+                        Ok(new_dns) => current_dns = Arc::new(new_dns),
+                        Err(e) => eprintln!("Failed to update DNS resolver: {}", e),
+                    }
+                }
+
+                // B. Wait for a browser connection
                 match listener.accept().await {
                     Ok((socket, _)) => {
                         // Drop the connection immediately if the user toggled the proxy off
@@ -93,14 +105,20 @@ fn main() {
                         }
 
                         // Cheaply clone the Arc pointers to pass to the connection handler
-                        let config_clone = Arc::clone(&app_config);
-                        let dns_clone = Arc::clone(&dns);
+                        let config_clone = Arc::clone(&current_config);
+                        let dns_clone = Arc::clone(&current_dns);
 
-                        // Spawn a lightweight Tokio task for the new connection
+                        // Spawn handler
                         tokio::spawn(async move {
-                            let result = handle_connection(socket, config_clone, dns_clone).await;
-                            if let Err(e) = result {
-                                eprintln!("Connection handler error: {}", e);
+                            if let Err(e) = handle_connection(socket, config_clone, dns_clone).await
+                            {
+                                // Ignore standard disconnections, log unexpected ones
+                                let kind = e.kind();
+                                if kind != std::io::ErrorKind::ConnectionReset
+                                    && kind != std::io::ErrorKind::UnexpectedEof
+                                {
+                                    eprintln!("Connection handler error: {}", e);
+                                }
                             }
                         });
                     }
@@ -115,7 +133,7 @@ fn main() {
         .with_decorations(false)
         .with_transparent(true)
         .with_undecorated_shadow(false)
-        .with_inner_size(LogicalSize::new(300.0, 500.0))
+        .with_inner_size(LogicalSize::new(300.0, 600.0))
         .with_resizable(false);
 
     #[cfg(target_os = "windows")]
@@ -124,7 +142,12 @@ fn main() {
     }
 
     let config = Config::new().with_window(window);
-    LaunchBuilder::desktop().with_cfg(config).launch(App);
+
+    // INJECT the Transmitter into the Dioxus App context!
+    LaunchBuilder::desktop()
+        .with_cfg(config)
+        .with_context(tx)
+        .launch(App);
 
     // Cleanup when UI window is closed
     println!("UI Closed. Disabling system proxy...");
@@ -134,9 +157,11 @@ fn main() {
 /// App is the main component of our app.
 #[component]
 fn App() -> Element {
-    // This currently creates an isolated UI state.
-    // You will need a global sync mechanism to push these changes to the Tokio thread!
-    use_context_provider(|| Signal::new(AppConfig::default()));
+    // Read the global watch channel sender that was passed into LaunchBuilder
+    let tx = use_context::<tokio::sync::watch::Sender<Arc<AppConfig>>>();
+
+    // Provide the initial state to the rest of the Dioxus UI
+    use_context_provider(|| Signal::new((*tx.borrow()).as_ref().clone()));
 
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
