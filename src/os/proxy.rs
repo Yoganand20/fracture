@@ -19,7 +19,7 @@ impl SystemProxy {
         // Turn the proxy ON
         key.set_value("ProxyEnable", &1u32)?;
 
-        // Point the proxy to our GreenTunnel instance
+        // Point the proxy to our fracture instance
         let proxy_server = format!("127.0.0.1:{}", port);
         key.set_value("ProxyServer", &proxy_server)?;
 

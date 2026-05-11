@@ -65,7 +65,7 @@ pub async fn handle_https(
     let mut client_hello_buf = header.to_vec();
     client_hello_buf.extend_from_slice(&payload);
 
-    // 6. THE GREEN TUNNEL MAGIC: Fragment the ClientHello using the injected config
+    // Fragment the ClientHello using the injected config
     let chunks = if config.tls_record_fragmentation {
         fragment_tls_record(&client_hello_buf, config.fragmentation_size)
     } else {
@@ -77,7 +77,7 @@ pub async fn handle_https(
         server_stream.write_all(&chunk[..]).await?;
     }
 
-    // 7. Pipe the rest of the connection back and forth blindly
+    // Pipe the rest of the connection back and forth blindly
     tokio::io::copy_bidirectional(&mut client_stream, &mut server_stream).await?;
 
     Ok(())
