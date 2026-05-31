@@ -1,129 +1,43 @@
-mod components;
-mod dns;
-mod icons;
-mod os;
-mod proxy;
-mod route;
-mod views;
-
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
 use std::thread;
-use tokio::net::TcpListener;
+#[cfg(feature = "desktop")]
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use crate::dns::resolver::{DnsConfig, DnsResolver, DnsType};
-use crate::os::proxy::SystemProxy;
-use crate::proxy::handler::handle_connection;
+use fracture::{start_proxy_engine, AppConfig};
 
-#[cfg(target_os = "windows")]
-use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
+#[cfg(feature = "desktop")]
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
+#[cfg(feature = "desktop")]
 use dioxus::prelude::*;
-use route::Route;
+#[cfg(feature = "desktop")]
+use fracture::route::Route;
 
+#[cfg(feature = "desktop")]
 const FAVICON: Asset = asset!("/assets/favicon.ico");
+#[cfg(feature = "desktop")]
 const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 
-pub static IS_PROXY_ACTIVE: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "desktop")]
+#[cfg(target_os = "windows")]
+use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 
-#[derive(Clone, Debug)]
-pub struct AppConfig {
-    pub tls_record_fragmentation: bool,
-    pub fragmentation_size: usize,
-    pub https_only: bool,
-    pub dns: DnsConfig,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            tls_record_fragmentation: false,
-            fragmentation_size: 100,
-            https_only: false,
-            dns: DnsConfig {
-                dns_type: DnsType::Https,
-                server_url: "cloudflare-dns.com".to_string(),
-                ips: vec!["1.1.1.1".to_string(), "1.0.0.1".to_string()],
-                port: 443,
-                cache_size: 1000,
-            },
-        }
-    }
-}
-
+#[cfg(feature = "desktop")]
 fn main() {
     let port = 8081;
 
     // Create the Watch Channel wrapped in an Arc for cheap cloning
     let initial_config = Arc::new(AppConfig::default());
-    let (tx, mut rx) = watch::channel(initial_config);
+    let (tx, rx) = watch::channel(initial_config.clone());
 
     // Spawn the background Proxy Engine
     thread::spawn(move || {
         let rt: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
 
         rt.block_on(async {
-            // Read initial state from the channel
-            let mut current_config = rx.borrow().clone();
-
-            // Initialize DNS Resolver
-            let mut current_dns =
-                Arc::new(DnsResolver::new(&current_config.dns).expect("Failed to init DNS"));
-
-            // Bind the TCP port
-            let listener = TcpListener::bind(format!("127.0.0.1:{}", port))
-                .await
-                .expect("Failed to bind proxy port");
-
-            println!(
-                "Proxy engine loaded in background on 127.0.0.1:{} (Currently OFF)",
-                port
-            );
-
-            // Listen for connections
-            loop {
-                // A. VERY FAST NON-BLOCKING CHECK: Has the Dioxus UI sent a new config?
-                if rx.has_changed().unwrap_or(false) {
-                    current_config = rx.borrow_and_update().clone();
-                    println!("Proxy Engine detected a settings update! Applying...");
-
-                    // Re-initialize the DNS resolver if the settings changed
-                    match DnsResolver::new(&current_config.dns) {
-                        Ok(new_dns) => current_dns = Arc::new(new_dns),
-                        Err(e) => eprintln!("Failed to update DNS resolver: {}", e),
-                    }
-                }
-
-                // B. Wait for a browser connection
-                match listener.accept().await {
-                    Ok((socket, _)) => {
-                        // Drop the connection immediately if the user toggled the proxy off
-                        if !IS_PROXY_ACTIVE.load(Ordering::Relaxed) {
-                            continue;
-                        }
-
-                        // Cheaply clone the Arc pointers to pass to the connection handler
-                        let config_clone = Arc::clone(&current_config);
-                        let dns_clone = Arc::clone(&current_dns);
-
-                        // Spawn handler
-                        tokio::spawn(async move {
-                            if let Err(e) = handle_connection(socket, config_clone, dns_clone).await
-                            {
-                                // Ignore standard disconnections, log unexpected ones
-                                let kind = e.kind();
-                                if kind != std::io::ErrorKind::ConnectionReset
-                                    && kind != std::io::ErrorKind::UnexpectedEof
-                                {
-                                    eprintln!("Connection handler error: {}", e);
-                                }
-                            }
-                        });
-                    }
-                    Err(e) => eprintln!("Failed to accept connection: {}", e),
-                }
+            if let Err(e) = start_proxy_engine(port, initial_config, rx).await {
+                eprintln!("✗ Proxy error: {}", e);
             }
         });
     });
@@ -151,10 +65,11 @@ fn main() {
 
     // Cleanup when UI window is closed
     println!("UI Closed. Disabling system proxy...");
-    let _ = SystemProxy::disable();
+    let _ = fracture::os::proxy::SystemProxy::disable();
 }
 
 /// App is the main component of our app.
+#[cfg(feature = "desktop")]
 #[component]
 fn App() -> Element {
     // Read the global watch channel sender that was passed into LaunchBuilder

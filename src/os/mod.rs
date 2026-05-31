@@ -1,1 +1,1 @@
-pub(crate) mod proxy;
+pub mod proxy;

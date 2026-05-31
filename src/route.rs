@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 /// the [`Routable`] trait, which provides the necessary methods for the router to work.
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
-pub(crate) enum Route {
+pub enum Route {
     #[layout(Layout)]
     #[route("/")]
     Home {},
