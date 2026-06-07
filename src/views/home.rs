@@ -1,33 +1,34 @@
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 use crate::{
     components::StatusCard,
     icons::{lucide, Icon},
     os::proxy::SystemProxy,
     route::Route,
-    IS_PROXY_ACTIVE,
+    ProxyController,
 };
 use dioxus::prelude::*;
 /// The Home page component that will be rendered when the current route is `[Route::Home]`
 #[component]
 pub fn Home() -> Element {
     let navigator = use_navigator();
-    let mut is_active = use_signal(|| IS_PROXY_ACTIVE.load(Ordering::Relaxed));
+    let proxy_state = use_context::<Arc<ProxyController>>();
+    let mut is_active = use_signal(|| proxy_state.is_active());
 
     let toggle_proxy = move |_| {
         if is_active() {
-            // Turn OFF
             if let Err(e) = SystemProxy::disable() {
                 eprintln!("Failed to disable proxy: {}", e);
+                return;
             }
-            IS_PROXY_ACTIVE.store(false, Ordering::Relaxed);
+            proxy_state.set_active(false);
             is_active.set(false);
         } else {
-            // Turn ON (Using the port 8081 we defined in main)
-            if let Err(e) = SystemProxy::enable(8081) {
+            if let Err(e) = SystemProxy::enable(proxy_state.port()) {
                 eprintln!("Failed to enable proxy: {}", e);
+                return;
             }
-            IS_PROXY_ACTIVE.store(true, Ordering::Relaxed);
+            proxy_state.set_active(true);
             is_active.set(true);
         }
     };

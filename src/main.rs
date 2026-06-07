@@ -5,7 +5,7 @@ use std::thread;
 use tokio::runtime::Runtime;
 use tokio::sync::watch;
 
-use fracture::{start_proxy_engine, AppConfig};
+use fracture::{start_proxy_engine, AppConfig, ProxyController};
 
 #[cfg(feature = "desktop")]
 use dioxus::desktop::{Config, LogicalSize, WindowBuilder};
@@ -30,37 +30,35 @@ fn main() {
     // Create the Watch Channel wrapped in an Arc for cheap cloning
     let initial_config = Arc::new(AppConfig::default());
     let (tx, rx) = watch::channel(initial_config.clone());
+    let proxy_state = Arc::new(ProxyController::new(port));
 
     // Spawn the background Proxy Engine
+    let proxy_state_for_engine = proxy_state.clone();
     thread::spawn(move || {
         let rt: Runtime = Runtime::new().expect("Failed to create Tokio runtime");
 
         rt.block_on(async {
-            if let Err(e) = start_proxy_engine(port, initial_config, rx).await {
+            if let Err(e) = start_proxy_engine(port, initial_config, rx, proxy_state_for_engine).await {
                 eprintln!("✗ Proxy error: {}", e);
             }
         });
     });
 
     // Spawn the Dioxus Desktop UI
-    let mut window = WindowBuilder::new()
+    let window = WindowBuilder::new()
         .with_decorations(false)
         .with_transparent(true)
         .with_undecorated_shadow(false)
         .with_inner_size(LogicalSize::new(300.0, 600.0))
         .with_resizable(false);
 
-    #[cfg(target_os = "windows")]
-    {
-        window = window.with_undecorated_shadow(false);
-    }
-
     let config = Config::new().with_window(window);
 
-    // INJECT the Transmitter into the Dioxus App context!
+    // INJECT the Transmitter and proxy state into the Dioxus App context!
     LaunchBuilder::desktop()
         .with_cfg(config)
         .with_context(tx)
+        .with_context(proxy_state)
         .launch(App);
 
     // Cleanup when UI window is closed

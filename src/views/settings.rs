@@ -10,12 +10,7 @@ pub fn Settings() -> Element {
 
     let tx = use_context::<tokio::sync::watch::Sender<Arc<AppConfig>>>();
 
-    let current_dns_type = match local_config.read().dns.dns_type {
-        DnsType::Https => "Https",
-        DnsType::Tls => "Tls",
-        DnsType::Quic => "Quic",
-        DnsType::Unencrypted => "Unencrypted",
-    };
+    let current_dns_type = local_config.read().dns.dns_type.to_string();
 
     rsx! {
         div { class: "flex flex-col h-full w-full bg-gray-50 overflow-hidden",
@@ -76,12 +71,10 @@ pub fn Settings() -> Element {
                         select {
                             class: "border rounded p-2 text-sm bg-white",
                             onchange: move |evt| {
-                                let dt = match evt.value().as_str() {
-                                    "Https" => DnsType::Https,
-                                    "Tls" => DnsType::Tls,
-                                    "Quic" => DnsType::Quic,
-                                    _ => DnsType::Unencrypted,
-                                };
+                                let dt = evt
+                                    .value()
+                                    .parse::<DnsType>()
+                                    .unwrap_or(DnsType::Unencrypted);
                                 local_config.write().dns.dns_type = dt;
                             },
                             option {

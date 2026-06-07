@@ -19,6 +19,19 @@ pub struct DnsConfig {
     pub port: u16,          // 443, 853, or 53
     pub cache_size: u64,
 }
+
+impl Default for DnsConfig {
+    fn default() -> Self {
+        Self {
+            dns_type: DnsType::Https,
+            server_url: "cloudflare-dns.com".to_string(),
+            ips: vec!["1.1.1.1".to_string(), "1.0.0.1".to_string()],
+            port: 443,
+            cache_size: 1000,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct DnsResolver {
     resolver: TokioAsyncResolver,
