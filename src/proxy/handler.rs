@@ -2,43 +2,92 @@ use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
-use crate::AppConfig;
-// Assuming you have a shared state holding your DNS Resolver and Config
 use crate::dns::resolver::DnsResolver;
 use crate::proxy::http::handle_http;
 use crate::proxy::https::handle_https;
+use crate::AppConfig;
 
-/// This acts as the main router. It reads the first few bytes of a connection
-/// and delegates it to either the HTTP or HTTPS handler.
+/// This acts as the main router. It reads the HTTP/CONNECT headers
+/// and delegates the connection to either the HTTP or HTTPS handler.
 pub async fn handle_connection(
     mut client_stream: TcpStream,
     config: Arc<AppConfig>,
     dns: Arc<DnsResolver>,
 ) -> std::io::Result<()> {
-    let mut buffer = vec![0; 4096]; // Read the first 4KB to inspect the request
+    let peer_addr = client_stream.peer_addr().ok();
 
-    let bytes_read = match client_stream.read(&mut buffer).await {
-        Ok(0) => return Ok(()), // Connection closed immediately
-        Ok(n) => n,
-        Err(e) => return Err(e),
+    let mut buffer = Vec::new();
+    let mut temp_buf = [0u8; 1024];
+
+    // Loop until we find the end of the HTTP/CONNECT headers (\r\n\r\n)
+    loop {
+        let n = client_stream.read(&mut temp_buf).await?;
+        if n == 0 {
+            if buffer.is_empty() {
+                return Ok(()); // Connection closed immediately cleanly
+            } else {
+                tracing::warn!(peer = ?peer_addr, "Connection closed prematurely before finishing HTTP headers");
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "Connection closed before complete headers received",
+                ));
+            }
+        }
+
+        buffer.extend_from_slice(&temp_buf[..n]);
+
+        // Check if we reached the end of the headers
+        if buffer.windows(4).any(|w| w == b"\r\n\r\n") {
+            break;
+        }
+
+        if buffer.len() > 8192 {
+            tracing::error!(peer = ?peer_addr, buffer_len = buffer.len(), "Rejected inbound stream: HTTP headers exceeded 8KB safety limit");
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Header too large",
+            ));
+        }
+    }
+
+    let (is_connect, target) = {
+        let request_str = String::from_utf8_lossy(&buffer);
+        let is_connect = request_str.starts_with("CONNECT ");
+        let target = request_str
+            .lines()
+            .next()
+            .unwrap_or("")
+            .split_whitespace()
+            .nth(1)
+            .unwrap_or("unknown")
+            .to_string(); // Allocating a small String breaks the borrow-chain to `buffer`
+        (is_connect, target)
     };
 
-    buffer.truncate(bytes_read);
-    let request_str = String::from_utf8_lossy(&buffer);
-
     // Route based on the first word of the request
-    if request_str.starts_with("CONNECT ") {
-        // It's an HTTPS request
-        handle_https(client_stream, buffer, config, dns).await
+    if is_connect {
+        tracing::info!(peer = ?peer_addr, target = %target, "Routing HTTPS CONNECT tunnel");
+
+        // `buffer` can now be moved cleanly because all borrows on it have completely expired!
+        if let Err(e) = handle_https(client_stream, buffer, config, dns).await {
+            tracing::error!(peer = ?peer_addr, target = %target, error = %e, "HTTPS tunnel pipeline processing failed");
+            return Err(e);
+        }
+        Ok(())
     } else if config.https_only {
-        // Block insecure HTTP if configured
+        tracing::warn!(peer = ?peer_addr, "Blocked insecure plain HTTP request under strict https_only configuration policy");
         Err(std::io::Error::new(
             std::io::ErrorKind::ConnectionAborted,
             "Insecure HTTP blocked",
         ))
     } else {
-        // It's a plain HTTP request
-        handle_http(client_stream, buffer, config, dns).await
+        tracing::info!(peer = ?peer_addr, target = %target, "Routing plain HTTP stream redirection");
+
+        if let Err(e) = handle_http(client_stream, buffer, config, dns).await {
+            tracing::error!(peer = ?peer_addr, target = %target, error = %e, "Plain HTTP processing failed");
+            return Err(e);
+        }
+        Ok(())
     }
 }
 
@@ -50,7 +99,6 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
-    // Helper to generate a dummy AppConfig for testing
     fn create_test_config(https_only: bool, mtu: usize) -> Arc<AppConfig> {
         Arc::new(AppConfig {
             tls_record_fragmentation: false,
@@ -66,7 +114,6 @@ mod tests {
         })
     }
 
-    // Helper to generate a dummy DNS resolver
     fn create_test_dns() -> Arc<DnsResolver> {
         let dns_config = DnsConfig {
             dns_type: DnsType::Unencrypted,
@@ -84,34 +131,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_https_only_blocks_plain_http() {
-        let config = create_test_config(true, 100); // https_only = true
+        let config = create_test_config(true, 100);
         let dns = create_test_dns();
 
-        // 1. Setup a dummy proxy listener on a random local port
         let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_addr = proxy.local_addr().unwrap();
 
-        // 2. Spawn the proxy handler in the background
         tokio::spawn(async move {
             let (socket, _) = proxy.accept().await.unwrap();
             let result = handle_connection(socket, config, dns).await;
 
-            // We EXPECT this to fail and return an error
             assert!(result.is_err());
             assert_eq!(result.unwrap_err().to_string(), "Insecure HTTP blocked");
         });
 
-        // 3. Connect a mock client and send a plain HTTP GET request
         let mut client = TcpStream::connect(proxy_addr).await.unwrap();
         client
             .write_all(b"GET / HTTP/1.1\r\nHost: example.com\r\n\r\n")
             .await
             .unwrap();
 
-        // 4. Verify the proxy slams the connection shut (reads 0 bytes)
         let mut buf = vec![0; 128];
         let bytes_read = client.read(&mut buf).await.unwrap();
-        assert_eq!(bytes_read, 0, "Proxy did not drop the insecure connection");
+        assert_eq!(bytes_read, 0);
     }
 
     // =====================================================================
@@ -120,28 +162,23 @@ mod tests {
 
     #[tokio::test]
     async fn test_https_connect_and_dpi_fragmentation() {
-        // We will force a tiny MTU of 5 bytes to guarantee our mock ClientHello gets heavily fragmented
         let config = create_test_config(false, 5);
         let dns = create_test_dns();
 
-        // 1. Setup a Mock Upstream Server (Acting as the blocked website, e.g., YouTube)
+        // 1. Setup a Mock Upstream Server
         let upstream_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_port = upstream_server.local_addr().unwrap().port();
 
         tokio::spawn(async move {
             let (mut socket, _) = upstream_server.accept().await.unwrap();
 
-            // Wait for the fragmented TLS ClientHello to arrive.
-            // 5 byte header + 10 byte payload = 15 bytes expected.
             let mut buf = vec![0; 15];
             socket.read_exact(&mut buf).await.unwrap();
 
-            // Verify the payload arrived perfectly intact despite fragmentation!
             let mut expected_tls = vec![22, 3, 3, 0, 10];
             expected_tls.extend_from_slice(b"1234567890");
             assert_eq!(buf, expected_tls);
 
-            // Reply back to the client
             socket
                 .write_all(b"SERVER_ACK_ENCRYPTED_DATA")
                 .await
@@ -156,10 +193,8 @@ mod tests {
         let dns_clone = dns.clone();
         tokio::spawn(async move {
             let (socket, _) = proxy_server.accept().await.unwrap();
-            // This will trigger `handle_https` internally
             let result = handle_connection(socket, config_clone, dns_clone).await;
 
-            // CRITICAL: We assert ok here so if the proxy fails, the test tells us why!
             assert!(
                 result.is_ok(),
                 "Proxy handler failed: {:?}",
@@ -172,14 +207,12 @@ mod tests {
             .await
             .unwrap();
 
-        // Step A: Send the CONNECT request
         let connect_req = format!(
             "CONNECT 127.0.0.1:{} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
             upstream_port
         );
         browser.write_all(connect_req.as_bytes()).await.unwrap();
 
-        // Step B: Expect "200 Connection Established" from the Proxy
         let mut buf = vec![0; 1024];
         let n = browser.read(&mut buf).await.unwrap();
         let response_str = String::from_utf8_lossy(&buf[..n]);
@@ -189,13 +222,10 @@ mod tests {
             response_str
         );
 
-        // Step C: Send a STRUCTURALLY VALID fake TLS ClientHello
-        // 22 = Handshake, 3, 3 = TLS 1.2, 0, 10 = Length 10
         let mut fake_tls_record = vec![22, 3, 3, 0, 10];
-        fake_tls_record.extend_from_slice(b"1234567890"); // Exactly 10 bytes payload
+        fake_tls_record.extend_from_slice(b"1234567890");
         browser.write_all(&fake_tls_record).await.unwrap();
 
-        // Step D: Ensure the bidirectional pipe works by receiving the server's response
         let n = browser.read(&mut buf).await.unwrap();
         assert_eq!(
             &buf[..n],
@@ -206,7 +236,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_forwards_plain_http() {
-        let config = create_test_config(false, 100); // https_only = false
+        let config = create_test_config(false, 100);
         let dns = create_test_dns();
 
         // 1. Setup Mock Upstream Server
@@ -218,11 +248,9 @@ mod tests {
             let mut buf = vec![0; 1024];
             let n = socket.read(&mut buf).await.unwrap();
 
-            // Verify the upstream server got the raw HTTP request
             let req_str = String::from_utf8_lossy(&buf[..n]);
             assert!(req_str.starts_with("GET / HTTP/1.1"));
 
-            // Reply back
             socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
         });
 
@@ -234,7 +262,6 @@ mod tests {
         let dns_clone = dns.clone();
         tokio::spawn(async move {
             let (socket, _) = proxy_server.accept().await.unwrap();
-            // This should route to `handle_http`
             let result = handle_connection(socket, config_clone, dns_clone).await;
             assert!(
                 result.is_ok(),
@@ -264,26 +291,21 @@ mod tests {
         let config = create_test_config(false, 100);
         let dns = create_test_dns();
 
-        // 1. Setup the Proxy Server
         let proxy_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_port = proxy_server.local_addr().unwrap().port();
 
-        // 2. Spawn the proxy handler
         let proxy_task = tokio::spawn(async move {
             let (socket, _) = proxy_server.accept().await.unwrap();
             let result = handle_connection(socket, config, dns).await;
 
-            // We expect Ok(()) because it should gracefully exit, not Err()
             assert!(result.is_ok());
         });
 
-        // 3. Connect a client, then immediately drop the connection
         let browser = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
             .await
             .unwrap();
-        drop(browser); // Force a TCP FIN/RST
+        drop(browser);
 
-        // 4. Wait for the proxy task to finish and ensure it didn't panic
         let _ = tokio::time::timeout(std::time::Duration::from_secs(1), proxy_task)
             .await
             .expect("Proxy task hung instead of exiting gracefully on disconnect!");

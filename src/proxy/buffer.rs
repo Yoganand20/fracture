@@ -1,3 +1,5 @@
+use tracing::{debug, trace, warn};
+
 /// Blindly segments a raw byte buffer into smaller chunks of a specified size.
 ///
 /// This function operates strictly at the TCP layer, ignoring any application-layer
@@ -13,16 +15,37 @@
 ///
 /// A vector containing the fragmented byte vectors.
 pub fn blind_chunk_buffer(buffer: &[u8], chunk_size: usize) -> Vec<Vec<u8>> {
+    trace!(
+        buffer_len = buffer.len(),
+        chunk_size,
+        "Executing raw TCP blind packet segmentation sequence"
+    );
+
     if buffer.is_empty() {
+        debug!("Blind chunking execution skipped: payload sequence buffer is empty");
         return Vec::new();
     }
     if chunk_size == 0 {
+        warn!(
+            buffer_len = buffer.len(),
+            "Blind chunking requested with a boundary metric of 0; returning layout intact to prevent allocation failure"
+        );
         return vec![buffer.to_vec()];
     }
-    buffer
+
+    let chunks: Vec<Vec<u8>> = buffer
         .chunks(chunk_size)
         .map(|chunk| chunk.to_vec())
-        .collect()
+        .collect();
+
+    debug!(
+        total_bytes = buffer.len(),
+        chunk_size,
+        chunks_allocated = chunks.len(),
+        "Blind slice allocation sequence finalized successfully"
+    );
+
+    chunks
 }
 
 /// Fragments a single TLS record into multiple, structurally valid TLS records.
@@ -41,8 +64,17 @@ pub fn blind_chunk_buffer(buffer: &[u8], chunk_size: usize) -> Vec<Vec<u8>> {
 ///
 /// A vector of newly constructed, valid TLS records. Each record contains a portion of the original payload, properly encapsulated with a TLS header.
 pub fn fragment_tls_record(buffer: &[u8], chunk_size: usize) -> Vec<Vec<u8>> {
+    trace!(
+        buffer_len = buffer.len(),
+        chunk_size,
+        "Processing structural TLS session layer segmentation"
+    );
+
     // If the buffer is completely empty, return an empty list of chunks
     if buffer.is_empty() {
+        debug!(
+            "TLS structural alignment processing aborted: target record stream is completely empty"
+        );
         return Vec::new();
     }
 
@@ -51,13 +83,28 @@ pub fn fragment_tls_record(buffer: &[u8], chunk_size: usize) -> Vec<Vec<u8>> {
     // [1..2] : TLS Version
     // [3..4] : Length of the record
     if chunk_size == 0 || buffer.len() <= 5 {
+        warn!(
+            buffer_len = buffer.len(),
+            chunk_size,
+            "TLS reconstruction step bypassed due to insufficient frame length or zero-sized chunk constraint"
+        );
         return vec![buffer.to_vec()];
     }
 
     let header = &buffer[0..3]; // Content Type and Version
     let payload = &buffer[5..]; // The actual SNI payload data
 
-    payload
+    let content_type = buffer[0];
+    let declared_len = ((buffer[3] as u16) << 8) | (buffer[4] as u16);
+
+    debug!(
+        tls_record_content_type = content_type,
+        header_declared_len = declared_len,
+        extracted_payload_bytes = payload.len(),
+        "Deconstructing baseline TLS frame metadata parameters for downstream splitting"
+    );
+
+    let chunks: Vec<Vec<u8>> = payload
         .chunks(chunk_size)
         .map(|chunk| {
             let length = chunk.len() as u16;
@@ -69,7 +116,16 @@ pub fn fragment_tls_record(buffer: &[u8], chunk_size: usize) -> Vec<Vec<u8>> {
             new_record.extend_from_slice(chunk);
             new_record
         })
-        .collect()
+        .collect();
+
+    debug!(
+        source_payload_bytes = payload.len(),
+        configured_max_chunk = chunk_size,
+        synthesized_tls_frames = chunks.len(),
+        "Successfully regenerated downstream TLS encapsulated frames to mask protocol handshake signature"
+    );
+
+    chunks
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@ use hickory_resolver::config::{NameServerConfig, Protocol, ResolverConfig, Resol
 use hickory_resolver::TokioAsyncResolver;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum DnsType {
@@ -40,6 +41,14 @@ pub struct DnsResolver {
 impl DnsResolver {
     /// Creates a new cross-platform DNS resolver based on the provided config.
     pub fn new(config: &DnsConfig) -> std::io::Result<Self> {
+        debug!(
+            dns_type = ?config.dns_type,
+            server_url = %config.server_url,
+            configured_ips = config.ips.len(),
+            cache_limit = config.cache_size,
+            "Assembling Hickory-backed async network DNS core cluster"
+        );
+
         let mut resolver_config = ResolverConfig::new();
         let mut opts = ResolverOpts::default();
 
@@ -56,7 +65,8 @@ impl DnsResolver {
 
         // 3. Build Name Servers
         for ip_str in &config.ips {
-            let ip_addr = IpAddr::from_str(ip_str).map_err(|_| {
+            let ip_addr = IpAddr::from_str(ip_str).map_err(|e| {
+                error!(error = %e, invalid_raw_ip = %ip_str, "Aborting runtime resolver bootstrap due to malformed static IP constraint");
                 std::io::Error::new(
                     std::io::ErrorKind::InvalidInput,
                     format!("Invalid IP address: {}", ip_str),
@@ -66,6 +76,12 @@ impl DnsResolver {
 
             // A helper closure to avoid repeating NameServerConfig boilerplate
             let mut add_server = |protocol: Protocol| {
+                trace!(
+                    target_socket = %socket_addr,
+                    transport_proto = ?protocol,
+                    sni_identity = ?tls_dns_name,
+                    "Registering upstream system authority entry to route network queries"
+                );
                 resolver_config.add_name_server(NameServerConfig {
                     socket_addr,
                     protocol,
@@ -89,18 +105,26 @@ impl DnsResolver {
         }
 
         let resolver = TokioAsyncResolver::tokio(resolver_config, opts);
+        info!("Async cross-platform DNS resolver initialized and armed successfully");
         Ok(Self { resolver })
     }
 
     /// Resolves a domain name to an IP Address, utilizing Hickory's built-in cache.
     pub async fn lookup(&self, domain: &str) -> std::io::Result<IpAddr> {
+        trace!(
+            query_domain = domain,
+            "Initiating domain address resolution sequence"
+        );
+
         // 1. If it's already a raw IP, return immediately
         if let Ok(ip) = IpAddr::from_str(domain) {
+            debug!(matched_literal = %ip, "Domain evaluation bypassed; target identifier is a raw IP literal format");
             return Ok(ip);
         }
 
         // 2. Perform network lookup (Hickory automatically checks its internal cache first!)
         let response = self.resolver.lookup_ip(domain).await.map_err(|e| {
+            warn!(error = %e, lookup_target = domain, "Upstream DNS endpoint mapping interface query failed or timed out");
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!("DNS resolution failed for {}: {}", domain, e),
@@ -108,12 +132,16 @@ impl DnsResolver {
         })?;
 
         // 3. Grab the first valid IP and return
-        response.iter().next().ok_or_else(|| {
+        let target_ip = response.iter().next().ok_or_else(|| {
+            error!(lookup_target = domain, "Upstream pipeline transaction indicated success but yielded empty dynamic record arrays");
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "No IP records found for domain",
             )
-        })
+        })?;
+
+        debug!(lookup_target = domain, mapped_ip = %target_ip, "Successfully completed atomic host resolution cycle");
+        Ok(target_ip)
     }
 }
 
