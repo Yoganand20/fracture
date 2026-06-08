@@ -5,26 +5,52 @@ use std::sync::Arc;
 #[component]
 pub fn Settings() -> Element {
     let navigator = use_navigator();
+    let is_dark = use_context::<Signal<bool>>();
     let mut global_config = use_context::<Signal<AppConfig>>();
     let mut local_config = use_signal(|| global_config.read().clone());
-
     let tx = use_context::<tokio::sync::watch::Sender<Arc<AppConfig>>>();
 
     let current_dns_type = local_config.read().dns.dns_type.to_string();
 
-    rsx! {
-        div { class: "flex flex-col h-full w-full bg-gray-50 overflow-hidden",
+    // Context Theme Style Token Maps
+    let card_style = if is_dark() {
+        "bg-zinc-900 border-zinc-800 shadow-md"
+    } else {
+        "bg-white border-zinc-200 shadow-sm"
+    };
+    let input_style = if is_dark() {
+        "bg-zinc-950 border-zinc-700 text-zinc-100 focus:border-orange-500"
+    } else {
+        "bg-zinc-50 border-zinc-300 text-zinc-900 focus:border-orange-500"
+    };
+    let label_style = if is_dark() {
+        "text-zinc-400"
+    } else {
+        "text-zinc-500"
+    };
+    let text_style = if is_dark() {
+        "text-zinc-200"
+    } else {
+        "text-zinc-800"
+    };
 
-            // 1. CONTENT DIV: Scrolls internally
-            div { class: "flex-1 overflow-y-auto p-4 space-y-4",
+    // Unified Scrollbar Styles Engine Injection
+    let scrollbar_style = "overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full " .to_owned() + 
+        if is_dark() { "[&::-webkit-scrollbar-thumb]:bg-zinc-800" } else { "[&::-webkit-scrollbar-thumb]:bg-zinc-300" };
+
+    rsx! {
+        div { class: "flex flex-col h-full w-full overflow-hidden",
+
+            // SKELETON REGION 1: Content Scroller Body Frame
+            div { class: "flex-1 p-4 space-y-4 rounded-xl min-h-0 {scrollbar_style}",
 
                 // 1. General Settings Card
-                div { class: "bg-white p-4 rounded-xl shadow-sm border border-gray-100",
-                    h3 { class: "text-sm font-bold text-gray-700 mb-3", "General" }
-                    label { class: "flex items-center space-x-2 text-sm",
+                div { class: "p-4 rounded-xl border space-y-3 transition-colors {card_style}",
+                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}", "General" }
+                    label { class: "flex items-center space-x-3 text-sm cursor-pointer {text_style}",
                         input {
                             r#type: "checkbox",
-                            class: "rounded text-blue-500 focus:ring-blue-500",
+                            class: "w-4 h-4 rounded accent-orange-500 cursor-pointer",
                             checked: local_config.read().https_only,
                             onchange: move |evt| local_config.write().https_only = evt.checked(),
                         }
@@ -33,24 +59,24 @@ pub fn Settings() -> Element {
                 }
 
                 // 2. DPI Evasion Card
-                div { class: "bg-white p-4 rounded-xl shadow-sm border border-gray-100",
-                    h3 { class: "text-sm font-bold text-gray-700 mb-3", "DPI Evasion Engine" }
+                div { class: "p-4 rounded-xl border space-y-4 transition-colors {card_style}",
+                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}", "DPI Evasion Engine" }
 
-                    label { class: "flex items-center space-x-2 text-sm mb-3",
+                    label { class: "flex items-center space-x-3 text-sm cursor-pointer {text_style}",
                         input {
                             r#type: "checkbox",
-                            class: "rounded text-blue-500 focus:ring-blue-500",
+                            class: "w-4 h-4 rounded accent-orange-500 cursor-pointer",
                             checked: local_config.read().tls_record_fragmentation,
                             onchange: move |evt| local_config.write().tls_record_fragmentation = evt.checked(),
                         }
                         span { "Strict TLS Record Fragmentation" }
                     }
 
-                    div { class: "flex flex-col space-y-1",
-                        label { class: "text-xs text-gray-500", "Fragmentation Size (MTU)" }
+                    div { class: "flex flex-col space-y-1.5",
+                        label { class: "text-xs font-medium {label_style}", "Fragmentation Size (MTU bytes)" }
                         input {
                             r#type: "number",
-                            class: "border rounded p-2 text-sm w-full",
+                            class: "border rounded-lg p-2.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all {input_style}",
                             value: "{local_config.read().fragmentation_size}",
                             onchange: move |evt| {
                                 if let Ok(val) = evt.value().parse::<usize>() {
@@ -62,67 +88,44 @@ pub fn Settings() -> Element {
                 }
 
                 // 3. DNS Resolver Card
-                div { class: "bg-white p-4 rounded-xl shadow-sm border border-gray-100 space-y-3",
-                    h3 { class: "text-sm font-bold text-gray-700 mb-1", "DNS Resolver" }
+                div { class: "p-4 rounded-xl border space-y-4 transition-colors {card_style}",
+                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}", "DNS Resolver" }
 
-                    // DNS Type Dropdown
-                    div { class: "flex flex-col space-y-1",
-                        label { class: "text-xs text-gray-500", "Protocol" }
+                    div { class: "flex flex-col space-y-1.5",
+                        label { class: "text-xs font-medium {label_style}", "Protocol" }
                         select {
-                            class: "border rounded p-2 text-sm bg-white",
+                            class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:border-orange-500 transition-colors cursor-pointer {input_style}",
                             onchange: move |evt| {
-                                let dt = evt
-                                    .value()
-                                    .parse::<DnsType>()
-                                    .unwrap_or(DnsType::Unencrypted);
+                                let dt = evt.value().parse::<DnsType>().unwrap_or(DnsType::Unencrypted);
                                 local_config.write().dns.dns_type = dt;
                             },
-                            option {
-                                value: "Https",
-                                selected: current_dns_type == "Https",
-                                "DoH (HTTPS)"
-                            }
-                            option {
-                                value: "Tls",
-                                selected: current_dns_type == "Tls",
-                                "DoT (TLS)"
-                            }
-                            option {
-                                value: "Quic",
-                                selected: current_dns_type == "Quic",
-                                "DoQ (QUIC)"
-                            }
-                            option {
-                                value: "Unencrypted",
-                                selected: current_dns_type == "Unencrypted",
-                                "Unencrypted (UDP/TCP)"
-                            }
+                            option { value: "Https", selected: current_dns_type == "Https", "DoH (HTTPS)" }
+                            option { value: "Tls", selected: current_dns_type == "Tls", "DoT (TLS)" }
+                            option { value: "Quic", selected: current_dns_type == "Quic", "DoQ (QUIC)" }
+                            option { value: "Unencrypted", selected: current_dns_type == "Unencrypted", "Unencrypted (UDP/TCP)" }
                         }
                     }
 
-                    // Server URL
-                    div { class: "flex flex-col space-y-1",
-                        label { class: "text-xs text-gray-500", "Server URL (SNI)" }
+                    div { class: "flex flex-col space-y-1.5",
+                        label { class: "text-xs font-medium {label_style}", "Server URL (SNI)" }
                         input {
                             r#type: "text",
-                            class: "border rounded p-2 text-sm",
+                            class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all placeholder-zinc-500 {input_style}",
                             placeholder: "e.g., cloudflare-dns.com",
                             value: "{local_config.read().dns.server_url}",
                             onchange: move |evt| local_config.write().dns.server_url = evt.value().clone(),
                         }
                     }
 
-                    // IPs (Comma separated)
-                    div { class: "flex flex-col space-y-1",
-                        label { class: "text-xs text-gray-500", "Server IPs (Comma separated)" }
+                    div { class: "flex flex-col space-y-1.5",
+                        label { class: "text-xs font-medium {label_style}", "Server IPs (Comma separated)" }
                         input {
                             r#type: "text",
-                            class: "border rounded p-2 text-sm",
+                            class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all placeholder-zinc-500 {input_style}",
                             placeholder: "1.1.1.1, 1.0.0.1",
                             value: "{local_config.read().dns.ips.join(\", \")}",
                             onchange: move |evt| {
-                                let ips: Vec<String> = evt
-                                    .value()
+                                let ips: Vec<String> = evt.value()
                                     .split(',')
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())
@@ -132,13 +135,12 @@ pub fn Settings() -> Element {
                         }
                     }
 
-                    // Port and Cache side-by-side
-                    div { class: "flex space-x-2",
-                        div { class: "flex flex-col space-y-1 w-1/2",
-                            label { class: "text-xs text-gray-500", "Port" }
+                    div { class: "flex space-x-3",
+                        div { class: "flex flex-col space-y-1.5 w-1/2",
+                            label { class: "text-xs font-medium {label_style}", "Port" }
                             input {
                                 r#type: "number",
-                                class: "border rounded p-2 text-sm",
+                                class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all {input_style}",
                                 value: "{local_config.read().dns.port}",
                                 onchange: move |evt| {
                                     if let Ok(val) = evt.value().parse::<u16>() {
@@ -147,11 +149,11 @@ pub fn Settings() -> Element {
                                 },
                             }
                         }
-                        div { class: "flex flex-col space-y-1 w-1/2",
-                            label { class: "text-xs text-gray-500", "Cache Size" }
+                        div { class: "flex flex-col space-y-1.5 w-1/2",
+                            label { class: "text-xs font-medium {label_style}", "Cache Size" }
                             input {
                                 r#type: "number",
-                                class: "border rounded p-2 text-sm",
+                                class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all {input_style}",
                                 value: "{local_config.read().dns.cache_size}",
                                 onchange: move |evt| {
                                     if let Ok(val) = evt.value().parse::<u64>() {
@@ -164,31 +166,33 @@ pub fn Settings() -> Element {
                 }
             }
 
-            // 2. BOTTOM NAVIGATION: Fixed naturally at the bottom
-            div { class: "p-4 bg-white border-t flex flex-col gap-2 shrink-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]",
+            // SKELETON REGION 2: Fixed Bottom Action Control Panel Drawer
+            div {
+                class: "h-[160px] w-full p-4 border-t flex flex-col justify-center gap-3 shrink-0 z-10 transition-colors duration-200 " .to_owned() +
+                    if is_dark() { "bg-zinc-900 border-zinc-800" } else { "bg-white border-zinc-200 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]" },
+
                 button {
-                    class: "px-4 py-2 w-full bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600 transition",
+                    class: "px-4 py-3 w-full bg-orange-500 text-zinc-950 font-bold rounded-xl hover:bg-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.2)] transition-colors",
                     onclick: move |_| {
                         let draft_settings = local_config.read().clone();
-
-                        // 1. Update the local Dioxus UI Signal
                         *global_config.write() = draft_settings.clone();
 
-                        // 2. Broadcast the new config to the background Tokio engine
                         if let Err(e) = tx.send(Arc::new(draft_settings)) {
                             eprintln!("Failed to send config to proxy engine: {}", e);
                         } else {
                             println!("Saved settings and instantly synced with Proxy Engine.");
+                            navigator.push(Route::Home {});
                         }
                     },
-                    "Save Configuration"
+                    "Save & Apply"
                 }
                 button {
-                    class: "px-4 py-2 w-full bg-gray-200 text-gray-700 font-semibold rounded-lg hover:bg-gray-300 transition",
+                    class: "px-4 py-3 w-full font-bold rounded-xl transition-colors " .to_owned() +
+                        if is_dark() { "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white" } else { "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 hover:text-zinc-950" },
                     onclick: move |_| {
                         navigator.push(Route::Home {});
                     },
-                    "Go Back"
+                    "Cancel"
                 }
             }
         }

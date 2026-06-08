@@ -1,8 +1,9 @@
+use crate::AppConfig;
 use dioxus::prelude::*;
 
-use crate::AppConfig;
 #[component]
 pub fn StatusCard(is_active: bool) -> Element {
+    let is_dark = use_context::<Signal<bool>>();
     let global_config = use_context::<Signal<AppConfig>>();
     let config = global_config.read();
 
@@ -11,39 +12,63 @@ pub fn StatusCard(is_active: bool) -> Element {
     } else {
         "Disconnected"
     };
-    let status_color = if is_active {
-        "text-green-500 font-semibold"
+
+    // Dynamic variable classes computed against the state engine context
+    let card_style = if is_dark() {
+        "bg-zinc-900 border-zinc-800 shadow-lg"
     } else {
-        "text-gray-400"
+        "bg-white border-zinc-200 shadow-md"
     };
+    let label_color = if is_dark() {
+        "text-zinc-400"
+    } else {
+        "text-zinc-500"
+    };
+    let dynamic_text = if is_dark() {
+        "text-zinc-200"
+    } else {
+        "text-zinc-800"
+    };
+
+    let status_color = if is_active {
+        "text-orange-500 font-semibold drop-shadow-[0_0_5px_rgba(249,115,22,0.4)]"
+    } else if is_dark() {
+        "text-zinc-500"
+    } else {
+        "text-zinc-400"
+    };
+
     let fragmentation_mode = if config.tls_record_fragmentation {
         "TLS-Aware"
     } else {
         "Blind Chunking"
     };
     let mode_color = if config.tls_record_fragmentation {
-        "text-orange-500 font-medium"
+        "text-orange-400 font-medium"
+    } else if is_dark() {
+        "text-zinc-500"
     } else {
-        "text-gray-600"
+        "text-zinc-400"
     };
+
     rsx! {
-        div { class: "flex flex-col w-full gap-3 p-4 my-6 bg-gray-50 border rounded-xl border-gray-200 shadow-sm",
+        div { class: "flex flex-col w-full gap-3 p-4 border rounded-xl transition-all duration-200 {card_style}",
 
             // Connection Status Row
             div { class: "flex justify-between items-center text-sm",
-                span { class: "text-gray-500 font-medium", "Status" }
+                span { class: "font-medium {label_color}", "Status" }
                 span { class: "{status_color}", "{status_text}" }
             }
 
             // DNS Server Row
             div { class: "flex justify-between items-center text-sm",
-                span { class: "text-gray-500 font-medium", "DNS Server" }
-                span { class: "text-gray-700 truncate max-w-[150px]", "{config.dns.server_url}" }
+                span { class: "font-medium {label_color}", "DNS Server" }
+                span { class: "truncate max-w-[150px] {dynamic_text}", "{config.dns.server_url}" }
             }
 
             // Fragmentation Mode Row
             div { class: "flex justify-between items-center text-sm",
-                span { class: "text-gray-500 font-medium", "Fragmentation" }
+                span { class: "font-medium {label_color}", "Fragmentation" }
                 span { class: "{mode_color}", "{fragmentation_mode}" }
             }
         }
