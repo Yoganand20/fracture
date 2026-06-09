@@ -12,7 +12,6 @@ pub fn Settings() -> Element {
 
     let current_dns_type = local_config.read().dns.dns_type.to_string();
 
-    // Context Theme Style Token Maps
     let card_style = if is_dark() {
         "bg-zinc-900 border-zinc-800 shadow-md"
     } else {
@@ -34,19 +33,49 @@ pub fn Settings() -> Element {
         "text-zinc-800"
     };
 
-    // Unified Scrollbar Styles Engine Injection
     let scrollbar_style = "overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full " .to_owned() + 
         if is_dark() { "[&::-webkit-scrollbar-thumb]:bg-zinc-800" } else { "[&::-webkit-scrollbar-thumb]:bg-zinc-300" };
 
     rsx! {
         div { class: "flex flex-col h-full w-full overflow-hidden",
 
-            // SKELETON REGION 1: Content Scroller Body Frame
+            // Content Scroller Body Frame
             div { class: "flex-1 p-4 space-y-4 rounded-xl min-h-0 {scrollbar_style}",
 
-                // 1. General Settings Card
-                div { class: "p-4 rounded-xl border space-y-3 transition-colors {card_style}",
-                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}", "General" }
+                // General Settings Card
+                div { class: "p-4 rounded-xl border space-y-4 transition-colors {card_style}",
+                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}",
+                        "General App Settings"
+                    }
+                    div { class: "flex space-x-3",
+                        div { class: "flex flex-col space-y-1.5 w-1/2",
+                            label { class: "text-xs font-medium {label_style}", "Proxy Listening Port" }
+                            input {
+                                r#type: "number",
+                                class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all {input_style}",
+                                value: "{local_config.read().proxy_port}",
+                                onchange: move |evt| {
+                                    if let Ok(val) = evt.value().parse::<u16>() {
+                                        local_config.write().proxy_port = val;
+                                    }
+                                },
+                            }
+                        }
+                        div { class: "flex flex-col space-y-1.5 w-1/2",
+                            label { class: "text-xs font-medium {label_style}", "Console Log Level" }
+                            select {
+                                class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:border-orange-500 transition-colors cursor-pointer {input_style}",
+                                onchange: move |evt| local_config.write().log_level = evt.value().clone(),
+                                option { value: "trace", selected: local_config.read().log_level == "trace", "Trace" }
+                                option { value: "debug", selected: local_config.read().log_level == "debug", "Debug" }
+                                option { value: "info", selected: local_config.read().log_level == "info", "Info" }
+                                option { value: "warn", selected: local_config.read().log_level == "warn", "Warn" }
+                                option { value: "error", selected: local_config.read().log_level == "error", "Error" }
+                                option { value: "off", selected: local_config.read().log_level == "off", "Off" }
+                            }
+                        }
+                    }
+
                     label { class: "flex items-center space-x-3 text-sm cursor-pointer {text_style}",
                         input {
                             r#type: "checkbox",
@@ -58,9 +87,11 @@ pub fn Settings() -> Element {
                     }
                 }
 
-                // 2. DPI Evasion Card
+                // DPI Evasion Card
                 div { class: "p-4 rounded-xl border space-y-4 transition-colors {card_style}",
-                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}", "DPI Evasion Engine" }
+                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}",
+                        "DPI Evasion Engine"
+                    }
 
                     label { class: "flex items-center space-x-3 text-sm cursor-pointer {text_style}",
                         input {
@@ -73,7 +104,9 @@ pub fn Settings() -> Element {
                     }
 
                     div { class: "flex flex-col space-y-1.5",
-                        label { class: "text-xs font-medium {label_style}", "Fragmentation Size (MTU bytes)" }
+                        label { class: "text-xs font-medium {label_style}",
+                            "Fragmentation Size (MTU bytes)"
+                        }
                         input {
                             r#type: "number",
                             class: "border rounded-lg p-2.5 text-sm w-full focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all {input_style}",
@@ -87,9 +120,11 @@ pub fn Settings() -> Element {
                     }
                 }
 
-                // 3. DNS Resolver Card
+                // DNS Resolver Card
                 div { class: "p-4 rounded-xl border space-y-4 transition-colors {card_style}",
-                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}", "DNS Resolver" }
+                    h3 { class: "text-xs uppercase tracking-wider font-extrabold {label_style}",
+                        "DNS Resolver"
+                    }
 
                     div { class: "flex flex-col space-y-1.5",
                         label { class: "text-xs font-medium {label_style}", "Protocol" }
@@ -125,7 +160,8 @@ pub fn Settings() -> Element {
                             placeholder: "1.1.1.1, 1.0.0.1",
                             value: "{local_config.read().dns.ips.join(\", \")}",
                             onchange: move |evt| {
-                                let ips: Vec<String> = evt.value()
+                                let ips: Vec<String> = evt
+                                    .value()
                                     .split(',')
                                     .map(|s| s.trim().to_string())
                                     .filter(|s| !s.is_empty())
@@ -166,10 +202,15 @@ pub fn Settings() -> Element {
                 }
             }
 
-            // SKELETON REGION 2: Fixed Bottom Action Control Panel Drawer
+            // Bottom Action Control Panel Drawer
             div {
-                class: "h-[160px] w-full p-4 border-t flex flex-col justify-center gap-3 shrink-0 z-10 transition-colors duration-200 " .to_owned() +
-                    if is_dark() { "bg-zinc-900 border-zinc-800" } else { "bg-white border-zinc-200 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]" },
+                class: "h-[160px] w-full p-4 border-t flex flex-col justify-center gap-3 shrink-0 z-10 transition-colors duration-200 "
+                    .to_owned()
+                    + if is_dark() {
+                        "bg-zinc-900 border-zinc-800"
+                    } else {
+                        "bg-white border-zinc-200 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]"
+                    },
 
                 button {
                     class: "px-4 py-3 w-full bg-orange-500 text-zinc-950 font-bold rounded-xl hover:bg-orange-600 shadow-[0_0_10px_rgba(249,115,22,0.2)] transition-colors",
@@ -187,8 +228,12 @@ pub fn Settings() -> Element {
                     "Save & Apply"
                 }
                 button {
-                    class: "px-4 py-3 w-full font-bold rounded-xl transition-colors " .to_owned() +
-                        if is_dark() { "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white" } else { "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 hover:text-zinc-950" },
+                    class: "px-4 py-3 w-full font-bold rounded-xl transition-colors ".to_owned()
+                        + if is_dark() {
+                            "bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                        } else {
+                            "bg-zinc-100 text-zinc-700 hover:bg-zinc-200 hover:text-zinc-950"
+                        },
                     onclick: move |_| {
                         navigator.push(Route::Home {});
                     },

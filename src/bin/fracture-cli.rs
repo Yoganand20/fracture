@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 use fracture::dns::resolver::DnsConfig;
-use fracture::logging::{init_file_logger, LogLevelHandle}; // Import alias handle
+use fracture::logging::{init_file_logger, LogLevelHandle};
 use fracture::os::proxy::SystemProxy;
 use fracture::{spawn_background_engine, AppConfig, EngineHandle};
 
@@ -46,23 +46,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Starting up network manipulation subsystem...");
 
     let cli = Cli::parse();
-    let config = build_app_config(cli.fragment, cli.size, cli.https_only);
 
-    match cli.command {
-        Some(Commands::Start { port }) => {
-            run_interactive_cli(port, config, log_handle);
-        }
-        None => {
-            run_interactive_cli(cli.port, config, log_handle);
-        }
-    }
+    let active_port = match cli.command {
+        Some(Commands::Start { port }) => port,
+        None => cli.port,
+    };
+
+    let config = build_app_config(active_port, cli.fragment, cli.size, cli.https_only);
+
+    run_interactive_cli(config, log_handle);
 
     tracing::info!("Exiting primary thread runtime application environment cleanly.");
     std::process::exit(0);
 }
 
-fn build_app_config(fragment: bool, size: usize, https_only: bool) -> Arc<AppConfig> {
+fn build_app_config(port: u16, fragment: bool, size: usize, https_only: bool) -> Arc<AppConfig> {
     Arc::new(AppConfig {
+        proxy_port: port,
+        log_level: "info".to_string(),
         tls_record_fragmentation: fragment,
         fragmentation_size: size,
         https_only,
@@ -70,8 +71,9 @@ fn build_app_config(fragment: bool, size: usize, https_only: bool) -> Arc<AppCon
     })
 }
 
-fn run_interactive_cli(port: u16, initial_config: Arc<AppConfig>, log_handle: LogLevelHandle) {
-    let engine = spawn_background_engine(port, initial_config.clone());
+fn run_interactive_cli(initial_config: Arc<AppConfig>, log_handle: LogLevelHandle) {
+    let port = initial_config.proxy_port;
+    let engine = spawn_background_engine(initial_config.clone());
     let mut current_config = (*initial_config).clone();
 
     if let Err(e) = SystemProxy::enable(port) {
@@ -82,7 +84,7 @@ fn run_interactive_cli(port: u16, initial_config: Arc<AppConfig>, log_handle: Lo
     let rt = tokio::runtime::Runtime::new().expect("Failed to create interactive runtime");
 
     rt.block_on(async {
-        print_welcome_banner(port, &current_config, engine.proxy_state.is_active());
+        print_welcome_banner(&current_config, engine.proxy_state.is_active());
         print_help_menu();
 
         let mut stdin_lines = BufReader::new(tokio::io::stdin()).lines();
@@ -104,8 +106,7 @@ fn run_interactive_cli(port: u16, initial_config: Arc<AppConfig>, log_handle: Lo
                             let input = line.trim();
                             if input.is_empty() { continue; }
 
-                            // Pass log_handle into the command parser interface
-                            if handle_command(input, port, &engine, &mut current_config, &log_handle).await {
+                            if handle_command(input, &engine, &mut current_config, &log_handle).await {
                                 break;
                             }
                         }
@@ -130,26 +131,26 @@ fn run_interactive_cli(port: u16, initial_config: Arc<AppConfig>, log_handle: Lo
 
 async fn handle_command(
     input: &str,
-    port: u16,
     engine: &EngineHandle,
     config: &mut AppConfig,
     log_handle: &LogLevelHandle,
 ) -> bool {
     let parts: Vec<&str> = input.split_whitespace().collect();
     let command = parts[0].to_lowercase();
+    let active_port = engine.proxy_state.port();
 
     match command.as_str() {
         "help" | "?" => {
             print_help_menu();
         }
         "status" => {
-            print_status(port, config, engine.proxy_state.is_active());
+            print_status(config, engine.proxy_state.is_active());
         }
         "start" => {
             if engine.proxy_state.is_active() {
                 println!("Proxy engine is already running.");
             } else {
-                if let Err(e) = SystemProxy::enable(port) {
+                if let Err(e) = SystemProxy::enable(active_port) {
                     eprintln!("⚠ Failed to enable system proxy: {}", e);
                 }
                 engine.proxy_state.set_active(true);
@@ -165,9 +166,6 @@ async fn handle_command(
                 println!("🛑 Proxy engine stopped. Traffic routing bypassed back to raw system.");
             }
         }
-        // =====================================================================
-        // NEW INTERACTIVE COMMAND: log <error|warn|info|debug|trace|off>
-        // =====================================================================
         "log" => {
             if parts.len() < 2 {
                 println!("Usage: log <trace|debug|info|warn|error|off>");
@@ -186,8 +184,8 @@ async fn handle_command(
             };
 
             if let Some(filter) = target_filter {
-                // Hot-swap the runtime tracing filter safely across executing tasks
                 if log_handle.modify(|f| *f = filter).is_ok() {
+                    config.log_level = parts[1].to_lowercase();
                     println!(
                         "⚙ Logging pipeline updated threshold metrics to: [{}]",
                         parts[1].to_uppercase()
@@ -281,11 +279,11 @@ async fn handle_command(
     false
 }
 
-fn print_welcome_banner(port: u16, config: &AppConfig, is_active: bool) {
+fn print_welcome_banner(config: &AppConfig, is_active: bool) {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("Fracture Engine CLI Interface Interactive Mode");
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-    print_status(port, config, is_active);
+    print_status(config, is_active);
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 
@@ -296,13 +294,13 @@ fn print_help_menu() {
     println!("  stop             - Suspends engine processing and detaches system proxy");
     println!("  log <level|off>  - Live hot-swap logging levels (trace|debug|info|warn|error|off)");
     println!("  fragment <on|off> - Toggles TLS packet segmentation configurations");
-    println!("  size <bytes>   - Configures maximum size of fragmented records");
+    println!("  size <bytes>     - Configures maximum size of fragmented records");
     println!("  https <on|off>    - Forces strictly encrypted validation downstream");
-    println!("  help / ?       - Shows this reference table menu");
-    println!("  exit / quit    - Terminates session safely\n");
+    println!("  help / ?         - Shows this reference table menu");
+    println!("  exit / quit      - Terminates session safely\n");
 }
 
-fn print_status(port: u16, config: &AppConfig, is_active: bool) {
+fn print_status(config: &AppConfig, is_active: bool) {
     println!(
         "Engine Loop Status: {}",
         if is_active {
@@ -311,7 +309,7 @@ fn print_status(port: u16, config: &AppConfig, is_active: bool) {
             "🔴 SUSPENDED (OFF)"
         }
     );
-    println!("Listening Port:     127.0.0.1:{}", port);
+    println!("Listening Port:     127.0.0.1:{}", config.proxy_port);
     println!(
         "Fragmentation:      {}",
         if config.tls_record_fragmentation {

@@ -241,6 +241,7 @@ mod tests {
                 port: 53,
                 cache_size: 100,
             },
+            ..Default::default()
         })
     }
 

@@ -16,14 +16,9 @@ pub fn Layout() -> Element {
             id: "layout",
             class: "flex flex-col h-full w-full overflow-hidden transition-colors duration-200 {layout_theme_classes}",
 
-            // Unified Application Drag-Header Panel
             AppHeader {}
 
-            // View Content Outlet Container
-            div {
-                class: "flex flex-col flex-1 min-h-0 w-full",
-                Outlet::<Route> {}
-            }
+            div { class: "flex flex-col flex-1 min-h-0 w-full", Outlet::<Route> {} }
         }
     }
 }

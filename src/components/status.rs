@@ -13,7 +13,6 @@ pub fn StatusCard(is_active: bool) -> Element {
         "Disconnected"
     };
 
-    // Dynamic variable classes computed against the state engine context
     let card_style = if is_dark() {
         "bg-zinc-900 border-zinc-800 shadow-lg"
     } else {

@@ -13,10 +13,9 @@ const TAILWIND_CSS: Asset = asset!("/assets/tailwind.css");
 use dioxus::desktop::tao::platform::windows::WindowBuilderExtWindows;
 
 fn main() {
-    let port = 8081;
     let initial_config = Arc::new(AppConfig::default());
 
-    let _engine = spawn_background_engine(port, initial_config);
+    let _engine = spawn_background_engine(initial_config);
 
     let window = WindowBuilder::new()
         .with_decorations(false)
@@ -48,10 +47,8 @@ fn main() {
 fn App() -> Element {
     let tx = use_context::<tokio::sync::watch::Sender<Arc<AppConfig>>>();
 
-    // 1. Initialize configuration mirror state
     use_context_provider(|| Signal::new((*tx.borrow()).as_ref().clone()));
 
-    // 2. Initialize dynamic global theme state: true = Dark Mode, false = Light Mode
     let is_dark = use_context_provider(|| Signal::new(true));
 
     let window_border_class = if is_dark() {
@@ -64,8 +61,7 @@ fn App() -> Element {
         document::Link { rel: "icon", href: FAVICON }
         document::Link { rel: "stylesheet", href: TAILWIND_CSS }
 
-        div {
-            class: "w-screen h-screen rounded-xl overflow-hidden border flex flex-col select-none transition-colors duration-200 {window_border_class}",
+        div { class: "w-screen h-screen rounded-xl overflow-hidden border flex flex-col select-none transition-colors duration-200 {window_border_class}",
             Router::<Route> {}
         }
     }

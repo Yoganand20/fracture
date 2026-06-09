@@ -30,7 +30,7 @@ pub async fn handle_http(
 
         match req.parse(&buffer) {
             Ok(httparse::Status::Complete(_)) => {
-                // Parse the host while the immutable borrow is active, 
+                // Parse the host while the immutable borrow is active,
                 // and break out of the loop with the owned data.
                 match parse_host_header(req.headers) {
                     Ok(target) => break target,
@@ -58,7 +58,7 @@ pub async fn handle_http(
                         ))
                     }
                     Ok(Ok(n)) => {
-                        // The immutable borrow from `req.parse` has ended its lifetime 
+                        // The immutable borrow from `req.parse` has ended its lifetime
                         // for this iteration, making it perfectly safe to mutate `buffer` here.
                         buffer.extend_from_slice(&take_buf[..n]);
                     }
@@ -182,6 +182,7 @@ mod tests {
                 port: 53,
                 cache_size: 100,
             },
+            ..Default::default()
         })
     }
 

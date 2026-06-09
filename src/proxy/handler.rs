@@ -111,6 +111,7 @@ mod tests {
                 port: 53,
                 cache_size: 100,
             },
+            ..Default::default()
         })
     }
 
@@ -125,9 +126,7 @@ mod tests {
         Arc::new(DnsResolver::new(&dns_config).expect("Failed to create DNS resolver"))
     }
 
-    // =====================================================================
-    // 1. ROUTER LOGIC TESTS
-    // =====================================================================
+    // ROUTER LOGIC TESTS
 
     #[tokio::test]
     async fn test_https_only_blocks_plain_http() {
@@ -156,16 +155,14 @@ mod tests {
         assert_eq!(bytes_read, 0);
     }
 
-    // =====================================================================
-    // 2. DPI BYPASS & FRAGMENTATION TESTS (The Core Engine)
-    // =====================================================================
+    // DPI BYPASS & FRAGMENTATION TESTS (The Core Engine)
 
     #[tokio::test]
     async fn test_https_connect_and_dpi_fragmentation() {
         let config = create_test_config(false, 5);
         let dns = create_test_dns();
 
-        // 1. Setup a Mock Upstream Server
+        // Setup a Mock Upstream Server
         let upstream_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_port = upstream_server.local_addr().unwrap().port();
 
@@ -185,7 +182,7 @@ mod tests {
                 .unwrap();
         });
 
-        // 2. Setup the Proxy Server
+        // Setup the Proxy Server
         let proxy_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_port = proxy_server.local_addr().unwrap().port();
 
@@ -202,7 +199,7 @@ mod tests {
             );
         });
 
-        // 3. Setup the Mock Browser (Client)
+        // Setup the Mock Browser (Client)
         let mut browser = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
             .await
             .unwrap();
@@ -239,7 +236,7 @@ mod tests {
         let config = create_test_config(false, 100);
         let dns = create_test_dns();
 
-        // 1. Setup Mock Upstream Server
+        // Setup Mock Upstream Server
         let upstream_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let upstream_port = upstream_server.local_addr().unwrap().port();
 
@@ -254,7 +251,7 @@ mod tests {
             socket.write_all(b"HTTP/1.1 200 OK\r\n\r\n").await.unwrap();
         });
 
-        // 2. Setup the Proxy Server
+        // Setup the Proxy Server
         let proxy_server = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy_port = proxy_server.local_addr().unwrap().port();
 
@@ -270,7 +267,7 @@ mod tests {
             );
         });
 
-        // 3. Connect Mock Client and send an HTTP GET
+        // Connect Mock Client and send an HTTP GET
         let mut browser = TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
             .await
             .unwrap();
@@ -280,7 +277,7 @@ mod tests {
         );
         browser.write_all(get_req.as_bytes()).await.unwrap();
 
-        // 4. Verify we get the HTTP response back from the upstream server
+        // Verify we get the HTTP response back from the upstream server
         let mut buf = vec![0; 1024];
         let n = browser.read(&mut buf).await.unwrap();
         assert_eq!(&buf[..n], b"HTTP/1.1 200 OK\r\n\r\n");

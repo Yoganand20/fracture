@@ -35,13 +35,13 @@ pub fn AppHeader() -> Element {
                 div { class: "text-orange-500",
                     Icon { data: lucide::Shield }
                 }
-                div { class: "text-sm font-bold tracking-wide transition-colors {text_color}", "Fracture" }
+                div { class: "text-sm font-bold tracking-wide transition-colors {text_color}",
+                    "Fracture"
+                }
             }
 
-            // Window & Utility System Controls Group
             div { class: "flex flex-row gap-0.5 items-center",
 
-                // Dynamic Theme Toggle Button
                 button {
                     class: "p-1 rounded transition-colors cursor-pointer {utility_btn}",
                     onmousedown: move |e| e.stop_propagation(), // Block window drag initiation
@@ -49,11 +49,10 @@ pub fn AppHeader() -> Element {
                     title: "Toggle Theme Profile",
                     Icon {
                         data: if is_dark() { lucide::Sun } else { lucide::Moon },
-                        size: "16"
+                        size: "16",
                     }
                 }
 
-                // Window Minimizer Control
                 button {
                     class: "p-1 rounded transition-colors cursor-pointer {utility_btn}",
                     onmousedown: move |e| e.stop_propagation(),
@@ -63,13 +62,8 @@ pub fn AppHeader() -> Element {
                     Icon { data: lucide::Minus }
                 }
 
-                // Window Terminator Control
                 button {
-                    class: if is_dark() {
-                        "p-1 rounded text-zinc-400 hover:bg-red-500/20 hover:text-red-400 transition-colors cursor-pointer"
-                    } else {
-                        "p-1 rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-600 transition-colors cursor-pointer"
-                    },
+                    class: if is_dark() { "p-1 rounded text-zinc-400 hover:bg-red-500/20 hover:text-red-400 transition-colors cursor-pointer" } else { "p-1 rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-600 transition-colors cursor-pointer" },
                     onmousedown: move |e| e.stop_propagation(),
                     onclick: move |_| {
                         window().close();
