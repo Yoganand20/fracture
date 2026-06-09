@@ -277,29 +277,19 @@ mod tests {
         assert!(err.to_string().contains("No Host header found"));
     }
 
-    #[tokio::test]
-    async fn test_http_missing_port_fallback() {
-        let config = create_test_config();
-        let dns = create_test_dns();
+    #[test]
+    fn test_http_missing_port_fallback() {
+        let mut headers = [httparse::EMPTY_HEADER; 1];
+        headers[0].name = "Host";
+        headers[0].value = b"127.0.0.1";
 
-        let proxy_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let proxy_port = proxy_listener.local_addr().unwrap().port();
-        let _client_mock = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", proxy_port))
-            .await
-            .unwrap();
-        let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
+        let result = parse_host_header(&headers);
 
-        let raw_http_request = b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".to_vec();
+        assert!(result.is_ok(), "Parser failed to process valid Host header");
+        let (host, port) = result.unwrap();
 
-        let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
-
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert_eq!(
-            err.kind(),
-            std::io::ErrorKind::ConnectionRefused,
-            "Did not attempt to connect to the default port 80"
-        );
+        assert_eq!(host, "127.0.0.1");
+        assert_eq!(port, 80, "Did not fallback to the default HTTP port 80");
     }
 
     #[tokio::test]
