@@ -2,9 +2,10 @@ name: Release Build
 
 on:
   push:
-    branches: [ "v1" ]
+    branches: ["v1"]
+    tags: ["v*"]
   pull_request:
-    branches: [ "v1" ]
+    branches: ["v1"]
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,51 +19,50 @@ jobs:
       contents: write
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Setup Rust Toolchain
-      uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-    - name: Setup Dependency Cache
-      uses: swatinem/rust-cache@v2
+      - name: Setup Dependency Cache
+        uses: swatinem/rust-cache@v2
 
-    - name: Install cargo-binstall
-      uses: cargo-bins/cargo-binstall@main
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@main
 
-    - name: Install Dioxus CLI Toolchain
-      run: cargo binstall dioxus-cli -y --locked
+      - name: Install Dioxus CLI Toolchain
+        run: cargo binstall dioxus-cli -y --locked
 
-    - name: Run Tests
-      run: cargo test --verbose
+      - name: Run Tests
+        run: cargo test --verbose --all-features
 
-    - name: Build Standalone CLI Binary
-      run: |
-        cargo build --release --bin fracture-cli --no-default-features --features cli
+      - name: Build Standalone CLI Binary
+        run: |
+          cargo build --release --bin fracture-cli --no-default-features --features cli
 
-    - name: Build Desktop UI Application
-      run: |
-        dx build --release --no-default-features --features desktop
+      - name: Build Desktop UI Application
+        run: |
+          dx build --release --no-default-features --features desktop
 
-    - name: Upload CLI Executable Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: fracture-cli-windows
-        path: target/release/fracture-cli.exe
-        if-no-files-found: error
+      - name: Upload CLI Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fracture-cli-windows
+          path: target/release/fracture-cli.exe
+          if-no-files-found: error
 
-    - name: Upload Desktop UI Executable Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: fracture-desktop-windows
-        path: |
-          target/dx/fracture/release/desktop/*.exe
-          target/release/fracture.exe
-        if-no-files-found: warn
+      - name: Upload Desktop UI Executable Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fracture-desktop-windows
+          path: target/dx/fracture/release/windows/app/fracture.exe
+          if-no-files-found: warn
 
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
-      with:
-        files: |
-          target\release\fracture-cli.exe
-          target\dx\fracture\release\windows\app\fracture.exe
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            target/release/fracture-cli.exe
+            target/dx/fracture/release/windows/app/fracture.exe
