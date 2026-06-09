@@ -24,11 +24,11 @@ jobs:
     - name: Setup Dependency Cache
       uses: swatinem/rust-cache@v2
 
+    - name: Install cargo-binstall
+      uses: cargo-bins/cargo-binstall@main
+
     - name: Install Dioxus CLI Toolchain
-      shell: pwsh
-      run: |
-        # 1. Install cargo-binstall
-        cargo binstall dioxus-cli --force
+      run: cargo binstall dioxus-cli -y --locked
 
     - name: Run Tests
       run: cargo test --verbose
