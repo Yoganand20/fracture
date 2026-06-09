@@ -30,10 +30,10 @@ Fracture is engineered around a **decoupled core server design**. The presentati
                              │
                ┌─────────────┴─────────────┐
                ▼                           ▼
-   ┌───────────────────────┐   ┌───────────────────────┐
-   │      Desktop UI       │   │          CLI          │
-   │   (Dioxus Framework)  │   │     (Clap Parser)     │
-   └───────────────────────┘   └───────────────────────┘
+    ┌───────────────────────┐   ┌───────────────────────┐
+    │      Desktop UI       │   │          CLI          │
+    │   (Dioxus Framework)  │   │     (Clap Parser)     │
+    └───────────────────────┘   └───────────────────────┘
 
 - **Isolated Engine Processing:** The proxy server runs on its own native OS thread, spinning up an independent asynchronous Tokio runtime environment. This guarantees zero UI stuttering or terminal latency during heavy network throughput.
 - **Unified Frontend Logic:** Both the Desktop app and the CLI interface consume the exact same underlying configuration state maps (`AppConfig`) and background engine handle.
@@ -56,7 +56,7 @@ Fracture is engineered around a **decoupled core server design**. The presentati
 
 ### Pre-built Binaries
 
-Download the latest binaries for Windows, macOS, and Linux from [Releases](https://github.com/Yoganand20/fracture/releases).
+Download the latest binaries for Windows from [Releases](https://github.com/Yoganand20/fracture/releases).
 
 ### Build from Source
 
@@ -149,7 +149,7 @@ dx build --release --no-default-features --features desktop
 ./target/release/fracture
 ```
 
-### CLI Binary Only
+### CLI Binary
 
 ```bash
 cargo build --release --bin fracture-cli --no-default-features --features cli
