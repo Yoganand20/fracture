@@ -43,7 +43,7 @@ jobs:
 
       - name: Build Desktop UI Application
         run: |
-          dx build --release --no-default-features --features desktop
+          & "$env:USERPROFILE\.cargo\bin\dx.exe" build --release --no-default-features --features desktop
 
       - name: Upload CLI Executable Artifact
         uses: actions/upload-artifact@v4
