@@ -66,12 +66,36 @@ pub fn Settings() -> Element {
                             select {
                                 class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:border-orange-500 transition-colors cursor-pointer {input_style}",
                                 onchange: move |evt| local_config.write().log_level = evt.value().clone(),
-                                option { value: "trace", selected: local_config.read().log_level == "trace", "Trace" }
-                                option { value: "debug", selected: local_config.read().log_level == "debug", "Debug" }
-                                option { value: "info", selected: local_config.read().log_level == "info", "Info" }
-                                option { value: "warn", selected: local_config.read().log_level == "warn", "Warn" }
-                                option { value: "error", selected: local_config.read().log_level == "error", "Error" }
-                                option { value: "off", selected: local_config.read().log_level == "off", "Off" }
+                                option {
+                                    value: "trace",
+                                    selected: local_config.read().log_level == "trace",
+                                    "Trace"
+                                }
+                                option {
+                                    value: "debug",
+                                    selected: local_config.read().log_level == "debug",
+                                    "Debug"
+                                }
+                                option {
+                                    value: "info",
+                                    selected: local_config.read().log_level == "info",
+                                    "Info"
+                                }
+                                option {
+                                    value: "warn",
+                                    selected: local_config.read().log_level == "warn",
+                                    "Warn"
+                                }
+                                option {
+                                    value: "error",
+                                    selected: local_config.read().log_level == "error",
+                                    "Error"
+                                }
+                                option {
+                                    value: "off",
+                                    selected: local_config.read().log_level == "off",
+                                    "Off"
+                                }
                             }
                         }
                     }
@@ -134,10 +158,26 @@ pub fn Settings() -> Element {
                                 let dt = evt.value().parse::<DnsType>().unwrap_or(DnsType::Unencrypted);
                                 local_config.write().dns.dns_type = dt;
                             },
-                            option { value: "Https", selected: current_dns_type == "Https", "DoH (HTTPS)" }
-                            option { value: "Tls", selected: current_dns_type == "Tls", "DoT (TLS)" }
-                            option { value: "Quic", selected: current_dns_type == "Quic", "DoQ (QUIC)" }
-                            option { value: "Unencrypted", selected: current_dns_type == "Unencrypted", "Unencrypted (UDP/TCP)" }
+                            option {
+                                value: "Https",
+                                selected: current_dns_type == "Https",
+                                "DoH (HTTPS)"
+                            }
+                            option {
+                                value: "Tls",
+                                selected: current_dns_type == "Tls",
+                                "DoT (TLS)"
+                            }
+                            option {
+                                value: "Quic",
+                                selected: current_dns_type == "Quic",
+                                "DoQ (QUIC)"
+                            }
+                            option {
+                                value: "Unencrypted",
+                                selected: current_dns_type == "Unencrypted",
+                                "Unencrypted (UDP/TCP)"
+                            }
                         }
                     }
 
@@ -153,7 +193,9 @@ pub fn Settings() -> Element {
                     }
 
                     div { class: "flex flex-col space-y-1.5",
-                        label { class: "text-xs font-medium {label_style}", "Server IPs (Comma separated)" }
+                        label { class: "text-xs font-medium {label_style}",
+                            "Server IPs (Comma separated)"
+                        }
                         input {
                             r#type: "text",
                             class: "border rounded-lg p-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-orange-500 transition-all placeholder-zinc-500 {input_style}",

@@ -208,9 +208,20 @@ mod tests {
         tokio::spawn(async move {
             let (mut socket, _) = upstream.accept().await.unwrap();
             let mut buf = vec![0; 1024];
-            let n = socket.read(&mut buf).await.unwrap();
+            let mut total_read = 0;
 
-            let request_str = String::from_utf8_lossy(&buf[..n]);
+            loop {
+                let n = socket.read(&mut buf[total_read..]).await.unwrap();
+                if n == 0 {
+                    break;
+                }
+                total_read += n;
+                if String::from_utf8_lossy(&buf[..total_read]).contains("\r\n\r\n") {
+                    break;
+                }
+            }
+
+            let request_str = String::from_utf8_lossy(&buf[..total_read]);
             assert!(request_str.contains("GET / HTTP/1.1"));
             assert!(request_str.contains(&format!("Host: 127.0.0.1:{}", upstream_port)));
 
@@ -303,7 +314,7 @@ mod tests {
             .unwrap();
         let (proxy_socket, _) = proxy_listener.accept().await.unwrap();
 
-        let raw_http_request = b"GET / HTTP/1.1\r\nHo".to_vec();
+        let raw_http_request = b"GET / HTTP/1.1\r\nMalformedHeaderLineNoColon\r\n\r\n".to_vec();
 
         let result = handle_http(proxy_socket, raw_http_request, config, dns).await;
 

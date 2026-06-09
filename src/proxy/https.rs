@@ -266,10 +266,9 @@ mod tests {
 
         tokio::spawn(async move {
             let (mut socket, _) = upstream.accept().await.unwrap();
-            let mut buf = vec![0; 1024];
 
-            let n = socket.read(&mut buf).await.unwrap();
-            assert!(n > 0);
+            let mut buf = vec![0; 15];
+            socket.read_exact(&mut buf).await.unwrap();
 
             socket.write_all(b"UPSTREAM_SERVER_RESPONSE").await.unwrap();
         });
