@@ -1,0 +1,64 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "v1" ]
+  pull_request:
+    branches: [ "v1" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-windows:
+    name: Compile Windows Binaries
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Setup Dependency Cache
+      uses: swatinem/rust-cache@v2
+
+    - name: Install Dioxus CLI Toolchain
+      shell: pwsh
+      run: |
+        # 1. Install cargo-binstall
+        iex (iwr -UseBasicParsing https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install.ps1).Content
+        
+        # 2. Force the current PowerShell session to recognize the new binary path
+        $env:PATH += ";${env:USERPROFILE}\.cargo\bin"
+        
+        # 3. Install dioxus-cli using the newly available binstall engine
+        cargo binstall dioxus-cli -y --locked
+
+    - name: Run Tests
+      run: cargo test --verbose
+
+    - name: Build Standalone CLI Binary
+      run: |
+        cargo build --release --bin fracture-cli --no-default-features --features cli
+
+    - name: Build Desktop UI Application
+      run: |
+        dx build --release --no-default-features --features desktop
+
+    - name: Upload CLI Executable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: fracture-cli-windows
+        path: target/release/fracture-cli.exe
+        if-no-files-found: error
+
+    - name: Upload Desktop UI Executable Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: fracture-desktop-windows
+        path: |
+          target/dx/fracture/release/desktop/*.exe
+          target/release/fracture.exe
+        if-no-files-found: warn
