@@ -42,8 +42,9 @@ jobs:
           cargo build --release --bin fracture-cli --no-default-features --features cli
 
       - name: Build Desktop UI Application
+        shell: bash
         run: |
-          & "$env:USERPROFILE\.cargo\bin\dx.exe" build --release --no-default-features --features desktop
+          dx build --release --no-default-features --features desktop
 
       - name: Upload CLI Executable Artifact
         uses: actions/upload-artifact@v4
