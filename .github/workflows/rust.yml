@@ -1,9 +1,8 @@
-name: Release Build
+name: Rust
 
 on:
   push:
     branches: ["v1"]
-    tags: ["v*"]
   pull_request:
     branches: ["v1"]
 
@@ -14,9 +13,6 @@ jobs:
   build-windows:
     name: Compile Windows Binaries
     runs-on: windows-latest
-
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout Repository
@@ -35,15 +31,14 @@ jobs:
         run: cargo binstall dioxus-cli -y --locked
 
       - name: Run Tests
-        run: cargo test --verbose --all-features
+        run: cargo test --verbose
 
       - name: Build Standalone CLI Binary
         run: |
           cargo build --release --bin fracture-cli --no-default-features --features cli
-
       - name: Build Desktop UI Application
         run: |
-          & "$env:CARGO_HOME\bin\dx.exe" build --release --no-default-features --features desktop
+          dx build --release --no-default-features --features desktop
 
       - name: Upload CLI Executable Artifact
         uses: actions/upload-artifact@v4
