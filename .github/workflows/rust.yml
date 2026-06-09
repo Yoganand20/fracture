@@ -25,10 +25,10 @@ jobs:
         uses: swatinem/rust-cache@v2
 
       - name: Install cargo-binstall
-        uses: cargo-bins/cargo-binstall@main
+        uses: cargo-bins/cargo-binstall@main 
 
       - name: Install Dioxus CLI Toolchain
-        run: cargo binstall dioxus-cli -y --locked
+        run: cargo binstall dioxus-cli -y --locked --force
 
       - name: Run Tests
         run: cargo test --verbose
