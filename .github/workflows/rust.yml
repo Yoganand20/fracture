@@ -28,13 +28,7 @@ jobs:
       shell: pwsh
       run: |
         # 1. Install cargo-binstall
-        iex (iwr -UseBasicParsing https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install.ps1).Content
-        
-        # 2. Force the current PowerShell session to recognize the new binary path
-        $env:PATH += ";${env:USERPROFILE}\.cargo\bin"
-        
-        # 3. Install dioxus-cli using the newly available binstall engine
-        cargo binstall dioxus-cli -y --locked
+        cargo binstall dioxus-cli --force
 
     - name: Run Tests
       run: cargo test --verbose
