@@ -3,7 +3,6 @@ name: Rust
 on:
   push:
     branches: ["v1"]
-    tags: ["v*"]
   pull_request:
     branches: ["v1"]
 
@@ -57,7 +56,6 @@ jobs:
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             target/release/fracture-cli.exe
